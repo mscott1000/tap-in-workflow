@@ -17,7 +17,9 @@ const PHONE_MATCH_CONFIG = {
 function onEdit(e) {
   if (!e || !e.range) return;
 
-  weeklyMarkerCopyOnEdit_(e);
+  if (typeof weeklyMarkerCopyOnEdit_ === 'function') {
+    weeklyMarkerCopyOnEdit_(e);
+  }
 
   const sheet = e.range.getSheet();
   if (sheet.getName() !== PHONE_MATCH_CONFIG.WEEKLY_SHEET_NAME) return;
