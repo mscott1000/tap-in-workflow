@@ -1,0 +1,352 @@
+/************************************************************
+ * Track This Case (TTC) auto-verifier
+ ************************************************************/
+
+const TTC_VERIFIER_CONFIG = {
+  FROM_EMAIL: 'mocourts.casenet@courts.mo.gov',
+  NEWER_THAN: '14d',
+  TRIGGER_EVERY_MINUTES: 10,
+  RUN_WINDOW_START_HOUR: 6,   // 6am inclusive
+  RUN_WINDOW_END_HOUR: 18,    // 6pm exclusive
+  MAX_THREADS_PER_RUN: 50,
+  MAX_MESSAGES_PER_THREAD: 10,
+  ANCHOR_LINE: 'Please verify your email address by clicking the link below:',
+  VERIFY_URL_REGEX: /https:\/\/www\.courts\.mo\.gov\/casenet\/verifyEmailTTC\.do\?[^\s]+/i
+};
+
+function ttcRunVerifier() {
+  if (!ttcVerifierWithinRunWindow_()) {
+    Logger.log('TTC: Outside run window; exiting.');
+    return;
+  }
+
+  const query =
+    `is:unread from:${TTC_VERIFIER_CONFIG.FROM_EMAIL} newer_than:${TTC_VERIFIER_CONFIG.NEWER_THAN}`;
+
+  const threads = GmailApp.search(query, 0, TTC_VERIFIER_CONFIG.MAX_THREADS_PER_RUN);
+
+  let verified = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  for (const thread of threads) {
+    const messages = thread.getMessages().slice(-TTC_VERIFIER_CONFIG.MAX_MESSAGES_PER_THREAD);
+
+    for (const msg of messages) {
+      if (!msg.isUnread()) continue;
+
+      try {
+        const body = msg.getPlainBody() || '';
+        const verifyUrl = ttcVerifierExtractVerifyUrl_(body);
+
+        if (!verifyUrl) {
+          skipped++;
+          Logger.log(`TTC: SKIP(no verify url) subj="${msg.getSubject()}" msgId=${msg.getId()}`);
+          continue;
+        }
+
+        const res = UrlFetchApp.fetch(verifyUrl, {
+          method: 'get',
+          followRedirects: true,
+          muteHttpExceptions: true,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
+        });
+
+        const code = res.getResponseCode();
+        if (code >= 200 && code < 400) {
+          msg.markRead();
+          verified++;
+          Logger.log(`TTC: VERIFIED code=${code} url=${verifyUrl} msgId=${msg.getId()}`);
+        } else {
+          errors++;
+          Logger.log(`TTC: ERROR http=${code} url=${verifyUrl} msgId=${msg.getId()}`);
+        }
+      } catch (e) {
+        errors++;
+        Logger.log(`TTC: ERROR exception msgId=${msg.getId()} err=${e && e.message ? e.message : e}`);
+      }
+    }
+  }
+
+  Logger.log(`TTC: Done. Verified=${verified} Skipped=${skipped} Errors=${errors} Threads=${threads.length}`);
+}
+
+function ttcVerifierExtractVerifyUrl_(plainBody) {
+  const text = (plainBody || '').replace(/\r\n/g, '\n');
+  const lines = text.split('\n').map(l => l.trim());
+
+  const anchorIdx = lines.findIndex(l => l === TTC_VERIFIER_CONFIG.ANCHOR_LINE);
+  if (anchorIdx !== -1) {
+    for (let i = anchorIdx + 1; i < Math.min(lines.length, anchorIdx + 6); i++) {
+      const line = lines[i];
+      if (!line) continue;
+
+      const m = line.match(TTC_VERIFIER_CONFIG.VERIFY_URL_REGEX);
+      if (m) return m[0];
+
+      const urlMatch = line.match(/https:\/\/\S+/i);
+      if (urlMatch && TTC_VERIFIER_CONFIG.VERIFY_URL_REGEX.test(urlMatch[0])) return urlMatch[0];
+    }
+  }
+
+  const m2 = text.match(TTC_VERIFIER_CONFIG.VERIFY_URL_REGEX);
+  return m2 ? m2[0] : '';
+}
+
+function ttcVerifierWithinRunWindow_() {
+  if (TTC_VERIFIER_CONFIG.RUN_WINDOW_START_HOUR == null || TTC_VERIFIER_CONFIG.RUN_WINDOW_END_HOUR == null) {
+    return true;
+  }
+
+  const tz = Session.getScriptTimeZone();
+  const now = new Date();
+  const hour = Number(Utilities.formatDate(now, tz, 'H'));
+  return hour >= TTC_VERIFIER_CONFIG.RUN_WINDOW_START_HOUR && hour < TTC_VERIFIER_CONFIG.RUN_WINDOW_END_HOUR;
+}
+
+/************************************************************
+ * TTC Verification Queue + Web App API
+ ************************************************************/
+
+const TTC_QUEUE_CONFIG = {
+  TTC_QUEUE_SPREADSHEET_ID: '1TPCAM7rJ9e_YDLrgI4YfjOq_QXZFfo6Sj6c9g9qPth4',
+  QUEUE_SHEET_NAME: 'TTC Verify Queue',
+
+  FROM_EMAIL: 'mocourts.casenet@courts.mo.gov',
+  GMAIL_QUERY: 'is:unread from:mocourts.casenet@courts.mo.gov newer_than:30d',
+
+  MAX_THREADS_PER_RUN: 50,
+  MAX_MESSAGES_PER_THREAD: 10,
+
+  RUN_WINDOW_START_HOUR: 6,
+  RUN_WINDOW_END_HOUR: 18,
+
+  API_TOKEN: 'jd87bFbs8jdt55dBfd668NIf665Jf566dnQ8fndoP63b',
+
+  ANCHOR_LINE: 'Please verify your email address by clicking the link below:',
+  VERIFY_URL_REGEX: /https:\/\/www\.courts\.mo\.gov\/casenet\/verifyEmailTTC\.do\?[^\s]+/i,
+
+  SEEN_STORE_KEY: 'ttc_seen_msg_ids_v1'
+};
+
+function ttcEnqueueUnreadVerifications() {
+  if (!ttcQueueWithinRunWindow_()) {
+    Logger.log('TTC-QUEUE: Outside run window; exiting.');
+    return;
+  }
+
+  const ss = SpreadsheetApp.openById(TTC_QUEUE_CONFIG.TTC_QUEUE_SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(TTC_QUEUE_CONFIG.QUEUE_SHEET_NAME);
+  if (!sheet) throw new Error(`Missing queue sheet tab: ${TTC_QUEUE_CONFIG.QUEUE_SHEET_NAME}`);
+
+  const seen = ttcLoadSeen_();
+  const threads = GmailApp.search(TTC_QUEUE_CONFIG.GMAIL_QUERY, 0, TTC_QUEUE_CONFIG.MAX_THREADS_PER_RUN);
+
+  let enqueued = 0;
+  let skipped = 0;
+
+  for (const thread of threads) {
+    const messages = thread.getMessages().slice(-TTC_QUEUE_CONFIG.MAX_MESSAGES_PER_THREAD);
+
+    for (const msg of messages) {
+      if (!msg.isUnread()) continue;
+
+      const msgId = msg.getId();
+      if (seen[msgId]) {
+        skipped++;
+        continue;
+      }
+
+      const body = msg.getPlainBody() || '';
+      const verifyUrl = ttcQueueExtractVerifyUrl_(body);
+      if (!verifyUrl) {
+        skipped++;
+        continue;
+      }
+
+      const info = ttcExtractCaseInfo_(body);
+
+      sheet.appendRow([
+        new Date(),             // Created At
+        'PENDING',              // Status
+        verifyUrl,              // Verify URL
+        info.caseNumber || '',  // Case Number
+        info.caseTitle || '',   // Case Title
+        msgId,                  // Gmail Message ID
+        ''                      // Last Error
+      ]);
+
+      seen[msgId] = true;
+      enqueued++;
+    }
+  }
+
+  ttcSaveSeen_(seen);
+
+  Logger.log(`TTC-QUEUE: Done. Enqueued=${enqueued} Skipped=${skipped} Threads=${threads.length}`);
+}
+
+function ttcQueueExtractVerifyUrl_(plainBody) {
+  const text = (plainBody || '').replace(/\r\n/g, '\n');
+  const lines = text.split('\n').map(l => l.trim());
+
+  const anchorIdx = lines.findIndex(l => l === TTC_QUEUE_CONFIG.ANCHOR_LINE);
+  if (anchorIdx !== -1) {
+    for (let i = anchorIdx + 1; i < Math.min(lines.length, anchorIdx + 8); i++) {
+      const line = lines[i];
+      if (!line) continue;
+
+      const m = line.match(TTC_QUEUE_CONFIG.VERIFY_URL_REGEX);
+      if (m) return m[0];
+
+      const urlAny = line.match(/https:\/\/\S+/i);
+      if (urlAny && TTC_QUEUE_CONFIG.VERIFY_URL_REGEX.test(urlAny[0])) return urlAny[0];
+    }
+  }
+
+  const m2 = text.match(TTC_QUEUE_CONFIG.VERIFY_URL_REGEX);
+  return m2 ? m2[0] : '';
+}
+
+function ttcExtractCaseInfo_(plainBody) {
+  const text = (plainBody || '').replace(/\r\n/g, '\n');
+  const m = text.match(/track case number\s+(\d+)\s*-\s*([^\n]+?)\s+through/i);
+  return {
+    caseNumber: m ? m[1] : '',
+    caseTitle: m ? m[2].trim() : ''
+  };
+}
+
+function ttcQueueWithinRunWindow_() {
+  const tz = Session.getScriptTimeZone();
+  const now = new Date();
+  const hour = Number(Utilities.formatDate(now, tz, 'H'));
+  return hour >= TTC_QUEUE_CONFIG.RUN_WINDOW_START_HOUR && hour < TTC_QUEUE_CONFIG.RUN_WINDOW_END_HOUR;
+}
+
+function ttcLoadSeen_() {
+  const props = PropertiesService.getScriptProperties();
+  const raw = props.getProperty(TTC_QUEUE_CONFIG.SEEN_STORE_KEY);
+  return raw ? JSON.parse(raw) : {};
+}
+
+function ttcSaveSeen_(obj) {
+  PropertiesService.getScriptProperties().setProperty(
+    TTC_QUEUE_CONFIG.SEEN_STORE_KEY,
+    JSON.stringify(obj || {})
+  );
+}
+
+/**
+ * Run once: create time trigger every 30 minutes.
+ */
+function ttcSetupEnqueueTriggerOnce() {
+  const triggers = ScriptApp.getProjectTriggers();
+  for (const t of triggers) {
+    if (t.getHandlerFunction() === 'ttcEnqueueUnreadVerifications') {
+      ScriptApp.deleteTrigger(t);
+    }
+  }
+
+  ScriptApp.newTrigger('ttcEnqueueUnreadVerifications')
+    .timeBased()
+    .everyMinutes(30)
+    .create();
+}
+
+/************************************************************
+ * Web App API for Tampermonkey
+ * - GET  ?token=...&mode=next   -> returns next pending item
+ * - POST ?token=...&mode=done   body: { row: <rowNumber> }
+ ************************************************************/
+
+function doGet(e) {
+  const token = (e && e.parameter && e.parameter.token) || '';
+  if (token !== TTC_QUEUE_CONFIG.API_TOKEN) return ttcJson_({ ok: false, error: 'unauthorized' });
+
+  const mode = (e.parameter.mode || '').toLowerCase();
+  if (mode !== 'next') return ttcJson_({ ok: false, error: 'unknown_mode' });
+
+  const ss = SpreadsheetApp.openById(TTC_QUEUE_CONFIG.TTC_QUEUE_SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(TTC_QUEUE_CONFIG.QUEUE_SHEET_NAME);
+  if (!sheet) return ttcJson_({ ok: false, error: 'missing_queue_sheet' });
+
+  const values = sheet.getDataRange().getValues();
+  for (let r = 2; r <= values.length; r++) {
+    const row = values[r - 1];
+    if (String(row[1]).trim() === 'PENDING') {
+      return ttcJson_({
+        ok: true,
+        row: r,
+        url: row[2],
+        caseNumber: row[3],
+        caseTitle: row[4],
+        msgId: row[5]
+      });
+    }
+  }
+
+  return ttcJson_({ ok: true, row: null });
+}
+
+function doPost(e) {
+  const params = (e && e.parameter) || {};
+  const token = params.token || '';
+  if (token !== TTC_QUEUE_CONFIG.API_TOKEN) return ttcJson_({ ok: false, error: 'unauthorized' });
+
+  const mode = (params.mode || '').toLowerCase();
+  if (mode !== 'done') return ttcJson_({ ok: false, error: 'unknown_mode' });
+
+  const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+  const rowNum = Number(body.row || 0);
+  if (!rowNum || rowNum < 2) return ttcJson_({ ok: false, error: 'bad_row' });
+
+  const ss = SpreadsheetApp.openById(TTC_QUEUE_CONFIG.TTC_QUEUE_SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(TTC_QUEUE_CONFIG.QUEUE_SHEET_NAME);
+  if (!sheet) return ttcJson_({ ok: false, error: 'missing_queue_sheet' });
+
+  const msgId = String(sheet.getRange(rowNum, 6).getValue() || '').trim();
+
+  sheet.getRange(rowNum, 2).setValue('DONE');
+  sheet.getRange(rowNum, 7).setValue('');
+
+  if (msgId) {
+    try {
+      const msg = GmailApp.getMessageById(msgId);
+      if (msg && msg.isUnread()) msg.markRead();
+    } catch (err) {
+      sheet.getRange(rowNum, 7).setValue(`Could not mark read: ${err && err.message ? err.message : err}`);
+    }
+  }
+
+  return ttcJson_({ ok: true });
+}
+
+function ttcJson_(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Run once to create/update the verifier trigger.
+ */
+function ttcSetupTriggerOnce() {
+  const triggers = ScriptApp.getProjectTriggers();
+  for (const t of triggers) {
+    if (t.getHandlerFunction() === 'ttcRunVerifier') {
+      ScriptApp.deleteTrigger(t);
+    }
+  }
+
+  ScriptApp.newTrigger('ttcRunVerifier')
+    .timeBased()
+    .everyMinutes(TTC_VERIFIER_CONFIG.TRIGGER_EVERY_MINUTES)
+    .create();
+}
