@@ -1,0 +1,712 @@
+const VOICE_LOG_CONFIG = {
+  SHEET_ID: '1TPCAM7rJ9e_YDLrgI4YfjOq_QXZFfo6Sj6c9g9qPth4',
+  SHEET_NAME: 'Weekly Call Log',
+
+  HEADER_ROW: 1,
+
+  TEMPLATE_MARKER: '__TEMPLATE__',
+  TEMPLATE_MARKER_COL: 47,
+
+  INSERT_MARKER: '_CALLS_BELOW_THIS_LINE_',
+
+  // Broad unread search, then the script filters only valid Google Voice call/voicemail emails.
+  GMAIL_QUERY: 'is:unread "Google Voice"',
+
+  MAX_THREADS_PER_RUN: 50,
+  MAX_MESSAGES_PER_THREAD: 10,
+
+  VOICEMAIL_MIN_WORDS: 11, // more than 10 words = voicemail
+
+  CONSTANTS: {
+    Priority: 'Low',
+    Status: 'Need to Call',
+    'Sent Form Link?': 'No',
+    'Filled out Form?': 'No'
+  }
+};
+
+function runGoogleVoiceLogIngest() {
+  const ss = SpreadsheetApp.openById(VOICE_LOG_CONFIG.SHEET_ID);
+  const sheet = ss.getSheetByName(VOICE_LOG_CONFIG.SHEET_NAME);
+  if (!sheet) throw new Error(`Sheet tab not found: ${VOICE_LOG_CONFIG.SHEET_NAME}`);
+
+  const completedSheet = ss.getSheetByName(PHONE_MATCH_CONFIG.COMPLETED_SHEET_NAME);
+  if (!completedSheet) throw new Error(`Sheet tab not found: ${PHONE_MATCH_CONFIG.COMPLETED_SHEET_NAME}`);
+
+  const headerMap = buildHeaderMap_(sheet);
+  validateRequiredHeaders_(headerMap, [
+    'Priority',
+    'Status',
+    'Contact Date',
+    'Contact Method',
+    'Sent Form Link?',
+    'Filled out Form?',
+    'Prep Notes',
+    'FN',
+    'LN',
+    'MN',
+    'Phone Number'
+  ]);
+
+  const templateRow = findTemplateRowByMarkerInColumn_(
+    sheet,
+    VOICE_LOG_CONFIG.TEMPLATE_MARKER,
+    VOICE_LOG_CONFIG.TEMPLATE_MARKER_COL
+  );
+
+  let insertAfterRow = findInsertRowByNamedRange_(sheet);
+
+  const lastCol = sheet.getLastColumn();
+  const threads = GmailApp.search(
+    VOICE_LOG_CONFIG.GMAIL_QUERY,
+    0,
+    VOICE_LOG_CONFIG.MAX_THREADS_PER_RUN
+  );
+
+  let appended = 0;
+  let skipped = 0;
+
+  for (const thread of threads) {
+    const messages = thread.getMessages().slice(-VOICE_LOG_CONFIG.MAX_MESSAGES_PER_THREAD);
+
+    for (const msg of messages) {
+      if (!msg.isUnread()) continue;
+
+      const analysis = analyzeGoogleVoiceEmail_(msg);
+      if (!analysis.isMatch) {
+        skipped++;
+        continue;
+      }
+
+      // Insert new row below the insert marker block
+      sheet.insertRowAfter(insertAfterRow);
+      const newRowIndex = insertAfterRow + 1;
+      insertAfterRow = newRowIndex;
+
+      // Copy template formatting + validations across the full sheet width
+      const templateRange = sheet.getRange(templateRow, 1, 1, lastCol);
+      const destRange = sheet.getRange(newRowIndex, 1, 1, lastCol);
+
+      templateRange.copyTo(destRange, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+      templateRange.copyTo(destRange, SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
+
+      
+      const tz = ss.getSpreadsheetTimeZone();
+      const todayString = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+      const contactDate = new Date(`${todayString}T12:00:00`);
+
+      // Build values first so they are easy to inspect in logs if needed
+      const phoneValue = analysis.formattedPhone || '';
+      const prepNotesValue = (analysis.contactMethod === 'voicemail' && analysis.transcript) ? analysis.transcript : '';
+      const firstNameValue = (analysis.name && analysis.name.first) ? analysis.name.first : '';
+      const lastNameValue = (analysis.name && analysis.name.last) ? analysis.name.last : '';
+      const middleNameValue = (analysis.name && analysis.name.middle) ? analysis.name.middle : '';
+      const priorityValue = analysis.contactMethod === 'voicemail' ? 'Medium' : VOICE_LOG_CONFIG.CONSTANTS.Priority;
+
+      // Dropdown-backed fields
+      setDropdownCellByHeader_(sheet, headerMap, newRowIndex, 'Priority', priorityValue);
+      setDropdownCellByHeader_(sheet, headerMap, newRowIndex, 'Status', VOICE_LOG_CONFIG.CONSTANTS.Status);
+      setDropdownCellByHeader_(sheet, headerMap, newRowIndex, 'Contact Method', analysis.contactMethod);
+      setDropdownCellByHeader_(sheet, headerMap, newRowIndex, 'Sent Form Link?', VOICE_LOG_CONFIG.CONSTANTS['Sent Form Link?']);
+      setDropdownCellByHeader_(sheet, headerMap, newRowIndex, 'Filled out Form?', VOICE_LOG_CONFIG.CONSTANTS['Filled out Form?']);
+
+      // Plain fields
+      setCellByHeader_(sheet, headerMap, newRowIndex, 'Contact Date', contactDate);
+      setCellByHeader_(sheet, headerMap, newRowIndex, 'Phone Number', phoneValue);
+      setCellByHeader_(sheet, headerMap, newRowIndex, 'Prep Notes', prepNotesValue);
+      setCellByHeader_(sheet, headerMap, newRowIndex, 'FN', firstNameValue);
+      setCellByHeader_(sheet, headerMap, newRowIndex, 'LN', lastNameValue);
+      setCellByHeader_(sheet, headerMap, newRowIndex, 'MN', middleNameValue);
+
+      SpreadsheetApp.flush();
+
+      phoneMatchCheckRow_(sheet, completedSheet, newRowIndex);
+
+      if (analysis.contactMethod === 'voicemail') {
+      voiceRunPriorClientNameMatch_(sheet, completedSheet, newRowIndex);
+      }
+
+      Logger.log(
+        `Voice row ${newRowIndex}: method=${analysis.contactMethod}, phone="${phoneValue}", ` +
+        `date="${contactDate}", fn="${firstNameValue}", ln="${lastNameValue}"`
+      );
+
+      // Mark processed only after successful append
+      msg.markRead();
+      appended++;
+    }
+  }
+
+  Logger.log(`Google Voice ingest done. Appended=${appended} Skipped=${skipped} Threads=${threads.length}`);
+}
+
+/**
+ * Analyze an unread Gmail message and decide whether it is:
+ * - a missed call
+ * - a voicemail with substantial text
+ * - a voicemail with too little text (treated as a missed call)
+ * - or not a relevant Google Voice notification
+ */
+function analyzeGoogleVoiceEmail_(msg) {
+  const subject = clean_(msg.getSubject() || '');
+  const plainBodyRaw = msg.getPlainBody() || '';
+  const body = cleanMultiline_(plainBodyRaw);
+  const htmlBodyText = cleanMultiline_(stripHtmlForVoice_(msg.getBody() || ''));
+
+  const lowerSubject = subject.toLowerCase();
+  const lowerBody = body.toLowerCase();
+  const lowerHtml = htmlBodyText.toLowerCase();
+
+  const looksLikeVoicemail =
+    lowerSubject.includes('new voicemail from') ||
+    lowerBody.includes('play message') ||
+    lowerBody.includes('receive email notifications for voicemail') ||
+    lowerHtml.includes('play message');
+
+  const looksLikeMissedCall =
+    lowerSubject.includes('new missed call from') ||
+    lowerBody.includes('you missed a call from') ||
+    lowerHtml.includes('you missed a call from');
+
+  if (!looksLikeVoicemail && !looksLikeMissedCall) {
+    return { isMatch: false };
+  }
+
+  const phoneDigits =
+    extractPhoneDigits_(subject) ||
+    extractPhoneDigits_(body) ||
+    extractPhoneDigits_(htmlBodyText);
+
+  const formattedPhone = formatPhoneDigits_(phoneDigits) || (phoneDigits ? phoneDigits : '');
+
+  const subjectCallerName = extractCallerNameFromVoiceSubject_(subject);
+  const subjectNameParts = splitSimplePersonName_(subjectCallerName);
+
+  // IMPORTANT: voicemail path gets priority over missed call
+  if (looksLikeVoicemail) {
+    const transcript =
+      extractVoicemailTranscript_(plainBodyRaw) ||
+      extractVoicemailTranscript_(htmlBodyText);
+
+    const wordCount = countWords_(transcript);
+
+    Logger.log(
+      `VOICE DEBUG | subject="${subject}" | looksLikeVoicemail=${looksLikeVoicemail} | ` +
+      `looksLikeMissedCall=${looksLikeMissedCall} | wordCount=${wordCount} | transcript="${transcript}"`
+    );
+
+    if (wordCount >= VOICE_LOG_CONFIG.VOICEMAIL_MIN_WORDS) {
+      const transcriptName = extractNameFromTranscript_(transcript);
+      const chosenName =
+        (transcriptName.first || transcriptName.last || transcriptName.middle)
+          ? transcriptName
+          : subjectNameParts;
+
+      return {
+        isMatch: true,
+        kind: 'voicemail',
+        contactMethod: 'voicemail',
+        transcript,
+        formattedPhone,
+        name: chosenName
+      };
+    }
+
+    return {
+      isMatch: true,
+      kind: 'voicemail_too_short',
+      contactMethod: 'call',
+      transcript: '',
+      formattedPhone,
+      name: subjectNameParts
+    };
+  }
+
+  if (looksLikeMissedCall) {
+    return {
+      isMatch: true,
+      kind: 'missed_call',
+      contactMethod: 'call',
+      transcript: '',
+      formattedPhone,
+      name: subjectNameParts
+    };
+  }
+
+  return { isMatch: false };
+}
+
+function voiceRunPriorClientNameMatch_(weeklySheet, completedSheet, rowNumber) {
+  const headerMap = buildHeaderMap_(weeklySheet);
+
+  const fnCol = headerMap['FN'];
+  const lnCol = headerMap['LN'];
+  const mnCol = headerMap['MN'];
+  const prepCol = headerMap['Prep Notes'];
+  const contactMethodCol = headerMap['Contact Method'];
+
+  if (!fnCol || !lnCol || !prepCol || !contactMethodCol) return;
+
+  // Hard stop: missed calls / call rows should never add text to Prep Notes
+  const contactMethod = String(
+    weeklySheet.getRange(rowNumber, contactMethodCol).getDisplayValue() || ''
+  ).trim().toLowerCase();
+
+  if (contactMethod !== 'voicemail') return;
+
+  const first = voiceNormalizeNamePiece_(weeklySheet.getRange(rowNumber, fnCol).getDisplayValue());
+  const last = voiceNormalizeNamePiece_(weeklySheet.getRange(rowNumber, lnCol).getDisplayValue());
+  const middle = mnCol ? voiceNormalizeNamePiece_(weeklySheet.getRange(rowNumber, mnCol).getDisplayValue()) : '';
+
+  if (!first || !last) return;
+
+  const weeklyMatches = voiceFindNameMatchesInWeeklyLog_(weeklySheet, headerMap, rowNumber, first, last, middle);
+  const completedMatches = voiceFindNameMatchesInCompletedLog_(completedSheet, first, last, middle);
+
+  if (!weeklyMatches.length && !completedMatches.length) return;
+
+  const notes = [];
+
+  weeklyMatches.forEach(r => {
+    notes.push(`POSSIBLE PRIOR CLIENT - name match on row ${r} of Weekly Call Log`);
+  });
+
+  completedMatches.forEach(r => {
+    notes.push(`POSSIBLE PRIOR CLIENT - name match on row ${r} of Completed Call Log`);
+  });
+
+  voiceAppendPrepNotes_(weeklySheet, prepCol, rowNumber, notes);
+}
+
+function voiceFindNameMatchesInWeeklyLog_(weeklySheet, headerMap, currentRow, first, last, middle) {
+  const fnCol = headerMap['FN'];
+  const lnCol = headerMap['LN'];
+  const mnCol = headerMap['MN'];
+
+  if (!fnCol || !lnCol) return [];
+
+  const lastRow = weeklySheet.getLastRow();
+  if (lastRow <= 1) return [];
+
+  const width = Math.max(fnCol, lnCol, mnCol || 0);
+  const values = weeklySheet.getRange(2, 1, lastRow - 1, width).getDisplayValues();
+
+  const matches = [];
+
+  for (let i = 0; i < values.length; i++) {
+    const rowNumber = i + 2;
+    if (rowNumber === currentRow) continue;
+
+    const row = values[i];
+    const rowFirst = voiceNormalizeNamePiece_(row[fnCol - 1]);
+    const rowLast = voiceNormalizeNamePiece_(row[lnCol - 1]);
+    const rowMiddle = mnCol ? voiceNormalizeNamePiece_(row[mnCol - 1]) : '';
+
+    if (rowFirst === first && rowLast === last) {
+      if (!middle || !rowMiddle || rowMiddle === middle || rowMiddle.charAt(0) === middle.charAt(0)) {
+        matches.push(rowNumber);
+      }
+    }
+  }
+
+  return matches;
+}
+
+function voiceFindNameMatchesInCompletedLog_(completedSheet, first, last, middle) {
+  const lastRow = completedSheet.getLastRow();
+  const lastCol = completedSheet.getLastColumn();
+
+  if (lastRow <= 1 || lastCol < 1) return [];
+
+  const values = completedSheet.getRange(2, 1, lastRow - 1, lastCol).getDisplayValues();
+  const matches = [];
+
+  for (let r = 0; r < values.length; r++) {
+    if (voiceCompletedRowHasNameMatch_(values[r], first, last, middle)) {
+      matches.push(r + 2);
+    }
+  }
+
+  return matches;
+}
+
+function voiceCompletedRowHasNameMatch_(rowValues, first, last, middle) {
+  const normRow = rowValues.map(v => voiceNormalizeNamePiece_(v)).filter(Boolean);
+
+  // Look for adjacent First + Last (+ optional Middle) patterns
+  for (let i = 0; i < normRow.length - 1; i++) {
+    const a = normRow[i];
+    const b = normRow[i + 1];
+    const c = i + 2 < normRow.length ? normRow[i + 2] : '';
+
+    if (a === first && b === last) {
+      if (!middle) return true;
+      if (!c) return true;
+      if (c === middle) return true;
+      if (c.charAt(0) === middle.charAt(0)) return true;
+    }
+  }
+
+  return false;
+}
+
+function voiceAppendPrepNotes_(sheet, prepCol, rowNumber, notesToAdd) {
+  if (!notesToAdd || !notesToAdd.length) return;
+
+  const cell = sheet.getRange(rowNumber, prepCol);
+  const current = String(cell.getDisplayValue() || '').trim();
+
+  const existingParts = current ? current.split('|').map(x => x.trim()).filter(Boolean) : [];
+  const seen = new Set(existingParts.map(x => x.toLowerCase()));
+
+  for (const note of notesToAdd) {
+    const cleanNote = String(note || '').trim();
+    if (!cleanNote) continue;
+
+    const key = cleanNote.toLowerCase();
+    if (!seen.has(key)) {
+      existingParts.push(cleanNote);
+      seen.add(key);
+    }
+  }
+
+  cell.setValue(existingParts.join(' | '));
+}
+
+function voiceNormalizeNamePiece_(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z]/g, '');
+}
+
+/**
+ * Pull transcript-like text from between "Google Voice" and "play message".
+ */
+function extractVoicemailTranscript_(rawText) {
+  let text = String(rawText || '');
+  if (!text) return '';
+
+  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // Primary pattern: transcript between Google Voice and play message
+  let match = text.match(/Google Voice\s*([\s\S]*?)\s*play message/i);
+
+  // Fallback: anything before play message if the "Google Voice" label is missing/altered
+  if (!match) {
+    match = text.match(/^\s*([\s\S]*?)\s*play message/i);
+  }
+
+  if (!match || !match[1]) return '';
+
+  let transcript = match[1]
+    .replace(/\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Strip obvious leftovers
+  transcript = transcript
+    .replace(/^Google Voice\s*/i, '')
+    .trim();
+
+  return transcript;
+}
+
+function countWords_(text) {
+  const matches = String(text || '').match(/[A-Za-z0-9']+/g);
+  return matches ? matches.length : 0;
+}
+
+function extractCallerNameFromVoiceSubject_(subject) {
+  const s = clean_(subject || '');
+  if (!s) return '';
+
+  // Common formats:
+  // "New voicemail from John Smith."
+  // "New missed call from John Smith."
+  let m = s.match(/^New\s+(?:voicemail|missed call)\s+from\s+(.+?)\.?$/i);
+  if (m && m[1]) {
+    const candidate = clean_(m[1]).replace(/\.$/, '');
+    return looksLikePersonName_(candidate) ? candidate : '';
+  }
+
+  // Fallback: sometimes the subject may just be the caller name itself
+  if (!extractPhoneDigits_(s) && looksLikePersonName_(s)) {
+    return s.replace(/\.$/, '');
+  }
+
+  return '';
+}
+
+function looksLikePersonName_(value) {
+  const s = clean_(value || '');
+  if (!s) return false;
+  if (extractPhoneDigits_(s)) return false;
+  if (/\d/.test(s)) return false;
+  if (!/^[A-Za-z][A-Za-z' .-]*$/.test(s)) return false;
+
+  const upper = s.toUpperCase();
+  const banned = new Set([
+    'UNKNOWN CALLER',
+    'BLOCKED CALLER',
+    'PRIVATE NUMBER',
+    'GOOGLE VOICE',
+    'VOICEMAIL',
+    'MISSED CALL'
+  ]);
+
+  return !banned.has(upper);
+}
+
+function splitSimplePersonName_(fullName) {
+  const parts = clean_(fullName || '').split(/\s+/).filter(Boolean);
+  if (!parts.length) return { first: '', last: '', middle: '' };
+  if (parts.length === 1) return { first: toTitleCaseName_(parts[0]), last: '', middle: '' };
+  if (parts.length === 2) {
+    return {
+      first: toTitleCaseName_(parts[0]),
+      last: toTitleCaseName_(parts[1]),
+      middle: ''
+    };
+  }
+
+  return {
+    first: toTitleCaseName_(parts[0]),
+    last: toTitleCaseName_(parts[parts.length - 1]),
+    middle: toTitleCaseName_(parts.slice(1, -1).join(' '))
+  };
+}
+
+function stripHtmlForVoice_(html) {
+  return String(html || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function setDropdownCellByHeader_(sheet, headerMap, rowIndex, headerName, desiredValue) {
+  const col = headerMap[headerName];
+  if (!col) throw new Error(`Header not found: ${headerName}`);
+
+  const cell = sheet.getRange(rowIndex, col);
+  const rule = cell.getDataValidation();
+
+  // If no validation rule exists, fall back to plain setValue.
+  if (!rule) {
+    cell.setValue(desiredValue);
+    return;
+  }
+
+  const criteriaType = rule.getCriteriaType();
+  const criteriaValues = rule.getCriteriaValues();
+  const wanted = String(desiredValue || '').trim();
+
+  let allowed = [];
+
+  // Dropdown made from explicit list
+  if (criteriaType === SpreadsheetApp.DataValidationCriteria.VALUE_IN_LIST) {
+    allowed = (criteriaValues[0] || []).map(v => String(v || '').trim());
+  }
+
+  // Dropdown made from a range somewhere in the sheet
+  else if (criteriaType === SpreadsheetApp.DataValidationCriteria.VALUE_IN_RANGE) {
+    const sourceRange = criteriaValues[0];
+    allowed = sourceRange
+      .getDisplayValues()
+      .flat()
+      .map(v => String(v || '').trim())
+      .filter(Boolean);
+  }
+
+  // If this is some other kind of validation, just write the value.
+  else {
+    cell.setValue(desiredValue);
+    SpreadsheetApp.flush();
+    return;
+  }
+
+  // Prefer exact match first
+  let match = allowed.find(v => v === wanted);
+
+  // Then case-insensitive trimmed match
+  if (!match) {
+    match = allowed.find(v => v.toLowerCase() === wanted.toLowerCase());
+  }
+
+  // If we found a real allowed option, write that exact text
+  if (match) {
+    cell.setValue(match);
+  } else {
+    // Fall back so the failure is visible in the sheet/logs if needed
+    cell.setValue(desiredValue);
+  }
+
+  SpreadsheetApp.flush();
+}
+
+function findInsertRowByNamedRange_(sheet) {
+  const ss = sheet.getParent();
+  const rng = ss.getRangeByName('CALLS_INSERT_ROW');
+
+  if (!rng) {
+    throw new Error('Named range not found: CALLS_INSERT_ROW');
+  }
+
+  return rng.getRow();
+}
+
+function extractPhoneDigits_(text) {
+  const s = String(text || '');
+
+  // Prefer common US 10-digit / 11-digit forms
+  const match = s.match(/(?:\+?1[\s.\-]*)?(?:\(\s*\d{3}\s*\)|\d{3})[\s.\-]*\d{3}[\s.\-]*\d{4}/);
+  if (!match) return '';
+
+  let digits = match[0].replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('1')) digits = digits.slice(1);
+
+  return digits.length === 10 ? digits : '';
+}
+
+function formatPhoneDigits_(digits) {
+  const d = String(digits || '');
+  if (!/^\d{10}$/.test(d)) return '';
+
+  return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+}
+
+/**
+ * Very lightweight name extraction from voicemail transcript.
+ * Looks for patterns like:
+ * - "my name is Leona Collins"
+ * - "this is Leona Collins"
+ * - "i am Leona Collins"
+ * - "i'm Leona Collins"
+ */
+function extractNameFromTranscript_(text) {
+  const s = String(text || '').trim();
+
+  const patterns = [
+    /\bmy name is\s+([a-z][a-z'-]+)(?:\s+([a-z][a-z'-]+))?/i,
+    /\bthis is\s+([a-z][a-z'-]+)(?:\s+([a-z][a-z'-]+))?/i,
+    /\bi am\s+([a-z][a-z'-]+)(?:\s+([a-z][a-z'-]+))?/i,
+    /\bi['’]?m\s+([a-z][a-z'-]+)(?:\s+([a-z][a-z'-]+))?/i
+  ];
+
+  const stopWords = new Set([
+    'from', 'and', 'with', 'about', 'for', 'that', 'because', 'just', 'needed', 'need', 'help', 'call'
+  ]);
+
+  for (const re of patterns) {
+    const m = s.match(re);
+    if (!m) continue;
+
+    const first = toTitleCaseName_(m[1] || '');
+    let last = toTitleCaseName_(m[2] || '');
+
+    if (last && stopWords.has(last.toLowerCase())) {
+      last = '';
+    }
+
+    return { first, last };
+  }
+
+  return { first: '', last: '' };
+}
+
+function toTitleCaseName_(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (m) => m.toUpperCase());
+}
+
+function buildHeaderMap_(sheet) {
+  const headers = sheet
+    .getRange(VOICE_LOG_CONFIG.HEADER_ROW, 1, 1, sheet.getLastColumn())
+    .getValues()[0]
+    .map(h => String(h || '').trim());
+
+  const map = {};
+  headers.forEach((h, i) => {
+    if (h) map[h] = i + 1;
+  });
+
+  return map;
+}
+
+function validateRequiredHeaders_(headerMap, requiredHeaders) {
+  const missing = requiredHeaders.filter(h => !headerMap[h]);
+  if (missing.length) {
+    throw new Error(`Missing required headers: ${missing.join(', ')}`);
+  }
+}
+
+function setCellByHeader_(sheet, headerMap, rowIndex, headerName, value) {
+  const col = headerMap[headerName];
+  if (!col) throw new Error(`Header not found: ${headerName}`);
+  sheet.getRange(rowIndex, col).setValue(value);
+}
+
+function findTemplateRowByMarkerInColumn_(sheet, marker, colIndex) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 1) throw new Error('Sheet is empty');
+
+  const values = sheet.getRange(1, colIndex, lastRow, 1).getValues();
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0] || '').trim() === marker) {
+      return i + 1;
+    }
+  }
+
+  throw new Error(`Template row not found. Put "${marker}" in column ${colIndex}.`);
+}
+
+/**
+ * Finds the first row where any cell exactly equals the insert marker.
+ */
+function findRowContainingMarkerAnywhere_(sheet, marker) {
+  const data = sheet.getDataRange().getValues();
+
+  for (let r = 0; r < data.length; r++) {
+    for (let c = 0; c < data[r].length; c++) {
+      if (String(data[r][c] || '').trim() === marker) {
+        return r + 1;
+      }
+    }
+  }
+
+  throw new Error(`Insert marker row not found: ${marker}`);
+}
+
+function clean_(s) {
+  return String(s || '').replace(/\s+/g, ' ').trim();
+}
+
+function cleanMultiline_(s) {
+  return String(s || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .trim();
+}
+
+/**
+ * Run once to install a 15-minute trigger.
+ */
+function setupGoogleVoiceLogTriggerOnce() {
+  const triggers = ScriptApp.getProjectTriggers();
+  for (const t of triggers) {
+    if (t.getHandlerFunction() === 'runGoogleVoiceLogIngest') {
+      ScriptApp.deleteTrigger(t);
+    }
+  }
+
+  ScriptApp.newTrigger('runGoogleVoiceLogIngest')
+    .timeBased()
+    .everyMinutes(15)
+    .create();
+}
