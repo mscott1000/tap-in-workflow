@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         google-voice-batch-text
 // @namespace    http://tampermonkey.net/
-// @version      2026-04-22.2
+// @version      2026-04-22.3
 // @description  Batch-compose and send one-to-one Google Voice follow-up texts from voice.google.com
 // @author       Mason Scott
 // @match        https://voice.google.com/*
@@ -557,6 +557,7 @@ function waitForOptional_(fn, timeoutMs = 2000, intervalMs = 100) {
   );
 
   if (!input) throw new Error('Recipient input did not appear.');
+  const picker = input.closest('gv-message-party-picker');
 
   focusAndClear_(input);
   insertText_(input, formatPhone_(phoneDigits) || phoneDigits);
@@ -567,7 +568,7 @@ function waitForOptional_(fn, timeoutMs = 2000, intervalMs = 100) {
   // 2) suggested/saved contact rows that don't use .send-to-button
   // Accept whichever appears and then confirm recipient is committed.
   await waitForOptional_(
-    () => findSendToChip_() || findFirstRecipientOption_() || findRecipientOverlay_() || recipientWasAccepted_(),
+    () => findSendToChip_() || findFirstRecipientOption_() || findRecipientOverlay_() || recipientWasAccepted_(picker, phoneDigits, input),
     2500,
     100
   );
@@ -584,7 +585,7 @@ function waitForOptional_(fn, timeoutMs = 2000, intervalMs = 100) {
   fireEnterKey_(input);
 
   await waitFor_(
-    recipientWasAccepted_,
+    () => recipientWasAccepted_(picker, phoneDigits, input),
     WAIT_TIMEOUT_MS,
     100,
     `Recipient was not accepted for ${formatPhone_(phoneDigits) || phoneDigits}.`
@@ -593,7 +594,7 @@ function waitForOptional_(fn, timeoutMs = 2000, intervalMs = 100) {
   // After acceptance, close any leftover suggestion panel without changing chips.
   await dismissRecipientSuggestions_(input);
 
-  if (!recipientWasAccepted_()) {
+  if (!recipientWasAccepted_(picker, phoneDigits, input)) {
     throw new Error(`Recipient was not accepted for ${formatPhone_(phoneDigits) || phoneDigits}.`);
   }
 }
@@ -638,8 +639,8 @@ function clickSendToChip_() {
     return chips[0];
   }
 
-  function getRecipientCount_() {
-    const picker = document.querySelector('gv-message-party-picker');
+  function getRecipientCount_(pickerEl) {
+    const picker = pickerEl || document.querySelector('gv-message-party-picker');
     if (!picker) return 0;
 
     const srText = Array.from(picker.querySelectorAll('.cdk-visually-hidden'))
@@ -652,24 +653,42 @@ function clickSendToChip_() {
     return m ? Number(m[1]) : 0;
   }
 
-  function recipientWasAccepted_() {
-    const count = getRecipientCount_();
-    if (count > 0) return true;
-
-    const picker = document.querySelector('gv-message-party-picker');
+  function recipientWasAccepted_(pickerEl, phoneDigits, inputEl) {
+    const picker = pickerEl
+      || (inputEl && inputEl.closest && inputEl.closest('gv-message-party-picker'))
+      || document.querySelector('gv-message-party-picker');
     if (!picker) return false;
 
-    const input = picker.querySelector('input.mat-mdc-chip-input');
+    const count = getRecipientCount_(picker);
+    if (count > 0) return true;
+
+    const input = inputEl || picker.querySelector('input.mat-mdc-chip-input');
     if (!input) return false;
 
     const placeholder = String(input.getAttribute('placeholder') || '').trim().toLowerCase();
     if (placeholder === 'add recipients') return true;
 
-    const chips = Array.from(
-      picker.querySelectorAll('mat-chip-row, .chip-row')
-    ).filter(isVisible_);
+    const chips = Array.from(picker.querySelectorAll('mat-chip-row, .chip-row'));
+    if (chips.length > 0) return true;
 
-    return chips.length > 0;
+    const normalized = String(phoneDigits || '').replace(/\D/g, '');
+    if (normalized && findRecipientChipInPicker_(picker, normalized)) return true;
+
+    const inputValueDigits = String(input.value || '').replace(/\D/g, '');
+    if (inputValueDigits && normalized && inputValueDigits !== normalized) return true;
+
+    // For some saved contacts, Voice commits to a token and clears the input
+    // without updating the SR "recipients added" text immediately.
+    return !input.value && document.activeElement !== input;
+  }
+
+  function findRecipientChipInPicker_(picker, normalizedDigits) {
+    const chips = Array.from(picker.querySelectorAll('mat-chip-row, .chip-row'));
+    for (const chip of chips) {
+      const textDigits = (chip.textContent || '').replace(/\D/g, '');
+      if (textDigits.includes(normalizedDigits)) return chip;
+    }
+    return null;
   }
 
   function findRecipientOverlay_() {
