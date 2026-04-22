@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         google-voice-batch-text
 // @namespace    http://tampermonkey.net/
-// @version      2026-04-22.3
+// @version      2026-04-22.4
 // @description  Batch-compose and send one-to-one Google Voice follow-up texts from voice.google.com
 // @author       Mason Scott
 // @match        https://voice.google.com/*
@@ -619,10 +619,23 @@ function clickSendToChip_() {
 
   return true;
 }
-  function findRecipientChip_(phoneDigits) {
-    const chips = Array.from(
-      document.querySelectorAll('gv-message-party-picker mat-chip-row, gv-message-party-picker .chip-row')
+  function getRecipientChips_(rootEl) {
+    const root = rootEl || document;
+    return Array.from(
+      root.querySelectorAll(
+        [
+          'gv-message-party-picker mat-chip-row',
+          'gv-message-party-picker mat-chip',
+          'gv-message-party-picker .mat-mdc-chip',
+          'gv-message-party-picker .chip-row',
+          'gv-message-party-picker [role="listitem"]'
+        ].join(', ')
+      )
     ).filter(isVisible_);
+  }
+
+  function findRecipientChip_(phoneDigits) {
+    const chips = getRecipientChips_();
 
     if (!chips.length) return null;
 
@@ -668,7 +681,7 @@ function clickSendToChip_() {
     const placeholder = String(input.getAttribute('placeholder') || '').trim().toLowerCase();
     if (placeholder === 'add recipients') return true;
 
-    const chips = Array.from(picker.querySelectorAll('mat-chip-row, .chip-row'));
+    const chips = getRecipientChips_(picker);
     if (chips.length > 0) return true;
 
     const normalized = String(phoneDigits || '').replace(/\D/g, '');
@@ -683,7 +696,7 @@ function clickSendToChip_() {
   }
 
   function findRecipientChipInPicker_(picker, normalizedDigits) {
-    const chips = Array.from(picker.querySelectorAll('mat-chip-row, .chip-row'));
+    const chips = getRecipientChips_(picker);
     for (const chip of chips) {
       const textDigits = (chip.textContent || '').replace(/\D/g, '');
       if (textDigits.includes(normalizedDigits)) return chip;
