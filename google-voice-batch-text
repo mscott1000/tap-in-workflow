@@ -1,0 +1,918 @@
+// ==UserScript==
+// @name         google-voice-batch-text
+// @namespace    http://tampermonkey.net/
+// @version      2026-04-21.3
+// @description  Batch-compose and send one-to-one Google Voice follow-up texts from voice.google.com
+// @author       Mason Scott
+// @match        https://voice.google.com/*
+// @run-at       document-idle
+// @grant        GM_addStyle
+// ==/UserScript==
+
+(function () {
+  'use strict';
+
+  /******************************************************************
+   * Config
+   ******************************************************************/
+  const APP_ID = 'gvBatchTextTool';
+  const STORAGE_KEY = 'gv_batch_sender_state_v1';
+
+  const SEND_DELAY_MS = 1800;
+  const AFTER_RECIPIENT_DELAY_MS = 900;
+  const AFTER_COMPOSE_DELAY_MS = 600;
+  const WAIT_TIMEOUT_MS = 15000;
+
+  let stopRequested = false;
+  let isRunning = false;
+
+  /******************************************************************
+   * Styles
+   ******************************************************************/
+  GM_addStyle(`
+    #${APP_ID}{
+      position:fixed;
+      right:12px;
+      bottom:12px;
+      width:430px;
+      max-height:82vh;
+      z-index:999999;
+      background:#f8fafc;
+      color:#0f172a;
+      border:1px solid #cbd5e1;
+      border-radius:14px;
+      box-shadow:0 10px 30px rgba(15,23,42,.18);
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      display:flex;
+      flex-direction:column;
+      overflow:hidden;
+    }
+    #${APP_ID} *{ box-sizing:border-box; }
+    #${APP_ID} .hdr{
+      padding:10px 12px;
+      background:#e2e8f0;
+      border-bottom:1px solid #cbd5e1;
+      font-weight:800;
+      font-size:14px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+    }
+    #${APP_ID} .body{
+      padding:10px;
+      overflow:auto;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    #${APP_ID} .row{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+    #${APP_ID} .field{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      width:100%;
+    }
+    #${APP_ID} label{
+      font-size:11px;
+      font-weight:700;
+      color:#334155;
+    }
+    #${APP_ID} textarea{
+      width:100%;
+      min-height:92px;
+      resize:vertical;
+      border:1px solid #cbd5e1;
+      border-radius:10px;
+      padding:8px 10px;
+      font-size:12px;
+      background:#fff;
+      color:#0f172a;
+    }
+    #${APP_ID} textarea#gvBatchMessage{
+      min-height:140px;
+    }
+    #${APP_ID} button{
+      border:1px solid #cbd5e1;
+      border-radius:10px;
+      padding:7px 10px;
+      font-size:12px;
+      font-weight:700;
+      cursor:pointer;
+      background:#fff;
+      color:#0f172a;
+    }
+    #${APP_ID} button.primary{
+      background:#2563eb;
+      color:#fff;
+      border-color:#1d4ed8;
+    }
+    #${APP_ID} button.danger{
+      background:#b91c1c;
+      color:#fff;
+      border-color:#991b1b;
+    }
+    #${APP_ID} button:disabled{
+      opacity:.55;
+      cursor:not-allowed;
+    }
+    #${APP_ID} .status{
+      white-space:pre-wrap;
+      font-size:12px;
+      line-height:1.4;
+      color:#334155;
+      background:#fff;
+      border:1px solid #cbd5e1;
+      border-radius:10px;
+      padding:8px 10px;
+      min-height:56px;
+    }
+    #${APP_ID} .preview{
+      white-space:pre-wrap;
+      font-size:12px;
+      line-height:1.4;
+      color:#0f172a;
+      background:#fff;
+      border:1px solid #cbd5e1;
+      border-radius:10px;
+      padding:8px 10px;
+      max-height:180px;
+      overflow:auto;
+    }
+    #${APP_ID} .tiny{
+      font-size:11px;
+      color:#475569;
+    }
+    #${APP_ID}.collapsed{
+      width:260px;
+      max-height:none;
+    }
+    #${APP_ID}.collapsed .body{
+      display:none;
+    }
+  `);
+
+  /******************************************************************
+   * UI
+   ******************************************************************/
+  const root = document.createElement('div');
+  root.id = APP_ID;
+  root.innerHTML = `
+    <div class="hdr">
+      <span>Google Voice Batch Follow-Up</span>
+      <button id="gvBatchClose" title="Minimize">×</button>
+    </div>
+    <div class="body">
+      <div class="field">
+        <label>Phone numbers (one per line)</label>
+        <textarea id="gvBatchPhones" placeholder="(314) 302-7864&#10;(314) 435-9029"></textarea>
+      </div>
+
+      <div class="field">
+        <label>Names (one per line, matched by row)</label>
+        <textarea id="gvBatchNames" placeholder="Yasmine&#10;Shauron"></textarea>
+      </div>
+
+      <div class="field">
+        <label>Message body</label>
+        <textarea id="gvBatchMessage" placeholder="this is Mason with Tap In..."></textarea>
+      </div>
+
+      <div class="row">
+        <button id="gvBatchPreviewBtn">Preview</button>
+        <button id="gvBatchStart" class="primary">Start Sending</button>
+        <button id="gvBatchStop" class="danger">Stop</button>
+        <button id="gvBatchSave">Save Draft</button>
+        <button id="gvBatchClear">Clear</button>
+      </div>
+
+      <div class="tiny">Messages are sent one by one through the Google Voice web UI.</div>
+
+      <div class="status" id="gvBatchStatus">Ready.</div>
+      <div class="preview" id="gvBatchPreview">(preview will appear here)</div>
+    </div>
+  `;
+  (document.body || document.documentElement).appendChild(root);
+
+  const $phones = root.querySelector('#gvBatchPhones');
+  const $names = root.querySelector('#gvBatchNames');
+  const $message = root.querySelector('#gvBatchMessage');
+  const $status = root.querySelector('#gvBatchStatus');
+  const $preview = root.querySelector('#gvBatchPreview');
+  const $start = root.querySelector('#gvBatchStart');
+  const $stop = root.querySelector('#gvBatchStop');
+  const $close = root.querySelector('#gvBatchClose');
+
+  function setStatus(msg) {
+    $status.textContent = String(msg || '');
+  }
+
+  function saveState() {
+    const state = {
+      phones: $phones.value || '',
+      names: $names.value || '',
+      message: $message.value || ''
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const state = JSON.parse(raw);
+      $phones.value = state.phones || '';
+      $names.value = state.names || '';
+      $message.value = state.message || '';
+    } catch (_) {}
+  }
+
+  loadState();
+
+  $close.addEventListener('click', () => {
+    const collapsed = root.classList.toggle('collapsed');
+
+    if (collapsed) {
+      $close.textContent = '+';
+      $close.title = 'Restore';
+      setStatus('Minimized. Click + to reopen.');
+    } else {
+      $close.textContent = '×';
+      $close.title = 'Minimize';
+    }
+  });
+
+  root.querySelector('#gvBatchSave').addEventListener('click', () => {
+    saveState();
+    setStatus('Draft saved.');
+  });
+
+  root.querySelector('#gvBatchClear').addEventListener('click', () => {
+    $phones.value = '';
+    $names.value = '';
+    $message.value = '';
+    saveState();
+    $preview.textContent = '(preview will appear here)';
+    setStatus('Cleared.');
+  });
+
+  root.querySelector('#gvBatchPreviewBtn').addEventListener('click', () => {
+    try {
+      const batch = buildBatch_();
+      renderPreview_(batch);
+      setStatus(`Preview ready. ${batch.length} message(s).`);
+    } catch (err) {
+      setStatus(`Preview error: ${String(err.message || err)}`);
+    }
+  });
+
+  $stop.addEventListener('click', () => {
+    stopRequested = true;
+    setStatus('Stop requested. The current send will finish, then the batch will stop.');
+  });
+
+  $start.addEventListener('click', async () => {
+    if (isRunning) return;
+
+    try {
+      saveState();
+      const batch = buildBatch_();
+      renderPreview_(batch);
+
+      const confirmed = confirm(
+        `Send ${batch.length} message(s) through Google Voice now?\n\n` +
+        `They will be sent one by one in the current browser tab.`
+      );
+      if (!confirmed) return;
+
+      stopRequested = false;
+      isRunning = true;
+      updateButtonState_(true);
+
+      await runBatch_(batch);
+
+      if (stopRequested) {
+        setStatus('Stopped.');
+      } else {
+        setStatus(`Done. Sent ${batch.length} message(s).`);
+      }
+    } catch (err) {
+      console.error(err);
+      setStatus(`Error: ${String(err.message || err)}`);
+    } finally {
+      isRunning = false;
+      updateButtonState_(false);
+    }
+  });
+
+  function updateButtonState_(running) {
+    $start.disabled = running;
+  }
+
+  /******************************************************************
+   * Batch parsing
+   ******************************************************************/
+  function buildBatch_() {
+    const phones = parseLines_($phones.value);
+    const names = parseLines_($names.value);
+    const baseMessage = String($message.value || '').trim();
+
+    if (!phones.length) throw new Error('Enter at least one phone number.');
+    if (!baseMessage) throw new Error('Enter a message body.');
+
+    const batch = phones.map((phone, idx) => {
+      const rawName = names[idx] || '';
+      const cleanName = normalizeName_(rawName);
+      const digits = normalizePhone_(phone);
+
+      return {
+        index: idx + 1,
+        phoneRaw: phone,
+        phoneDigits: digits,
+        phoneDisplay: formatPhone_(digits) || phone.trim(),
+        name: cleanName,
+        message: composeMessage_(cleanName, baseMessage)
+      };
+    });
+
+    const bad = batch.filter(x => !x.phoneDigits);
+    if (bad.length) {
+      throw new Error(`These phone numbers could not be parsed: ${bad.map(x => x.phoneRaw).join(', ')}`);
+    }
+
+    return batch;
+  }
+
+  function parseLines_(text) {
+    return String(text || '')
+      .split(/\r?\n/)
+      .map(s => s.trim())
+      .filter(Boolean);
+  }
+
+  function normalizePhone_(text) {
+    let digits = String(text || '').replace(/\D/g, '');
+    if (digits.length === 11 && digits.startsWith('1')) digits = digits.slice(1);
+    return digits.length === 10 ? digits : '';
+  }
+
+  function formatPhone_(digits) {
+    const d = String(digits || '');
+    if (!/^\d{10}$/.test(d)) return '';
+    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  }
+
+  function normalizeName_(name) {
+    return String(name || '').trim();
+  }
+
+  function composeMessage_(name, baseMessage) {
+    const body = String(baseMessage || '').trim();
+    if (!name) return body;
+    return `Hello ${name}, ${body}`;
+  }
+
+function clickElementLikeUser_(el) {
+  if (!el) return;
+
+  try { el.focus(); } catch (_) {}
+
+  ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(type => {
+    el.dispatchEvent(new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      view: window
+    }));
+  });
+}
+
+function waitForOptional_(fn, timeoutMs = 2000, intervalMs = 100) {
+  return new Promise(resolve => {
+    const start = Date.now();
+
+    const tick = () => {
+      try {
+        const value = fn();
+        if (value) return resolve(value);
+
+        if (Date.now() - start >= timeoutMs) {
+          return resolve(null);
+        }
+
+        setTimeout(tick, intervalMs);
+      } catch (_) {
+        return resolve(null);
+      }
+    };
+
+    tick();
+  });
+}
+  function renderPreview_(batch) {
+    if (!batch.length) {
+      $preview.textContent = '(preview will appear here)';
+      return;
+    }
+
+    const lines = [];
+    const show = batch.slice(0, 3);
+
+    show.forEach(item => {
+      lines.push(`[${item.index}] ${item.phoneDisplay}`);
+      lines.push(item.message);
+      lines.push('');
+    });
+
+    if (batch.length > show.length) {
+      lines.push(`...and ${batch.length - show.length} more.`);
+    }
+
+    $preview.textContent = lines.join('\n');
+  }
+
+  /******************************************************************
+   * Google Voice automation
+   ******************************************************************/
+  async function runBatch_(batch) {
+    for (let i = 0; i < batch.length; i++) {
+      if (stopRequested) break;
+
+      const item = batch[i];
+      setStatus(`Sending ${i + 1}/${batch.length} to ${item.phoneDisplay} ...`);
+
+      await ensureMessagesTab_();
+      await openNewMessageComposer_();
+      await fillRecipient_(item.phoneDigits);
+      await waitMs_(AFTER_RECIPIENT_DELAY_MS);
+      await fillMessageBox_(item.message);
+      await waitMs_(AFTER_COMPOSE_DELAY_MS);
+      await clickSend_(item.phoneDisplay);
+
+      setStatus(`Sent ${i + 1}/${batch.length} to ${item.phoneDisplay}`);
+      await waitMs_(SEND_DELAY_MS);
+    }
+  }
+
+  async function ensureMessagesTab_() {
+    if (/\/messages\b/i.test(location.pathname)) return;
+
+    const link = findByTextOrAria_(
+      [
+        'a[aria-label*="Messages"]',
+        'div[role="link"][aria-label*="Messages"]',
+        'a[href*="/messages"]'
+      ],
+      /messages/i
+    );
+
+    if (!link) {
+      throw new Error('Could not find the Messages tab in Google Voice.');
+    }
+
+    link.click();
+
+    await waitFor_(
+      () => /\/messages\b/i.test(location.pathname),
+      WAIT_TIMEOUT_MS,
+      200,
+      'Messages tab did not load.'
+    );
+  }
+
+  async function openNewMessageComposer_() {
+    const btn = findByTextOrAria_(
+      [
+        'button[aria-label*="Send new message"]',
+        'div[role="button"][aria-label*="Send new message"]',
+        'button[aria-label*="Send a message"]',
+        'div[role="button"][aria-label*="Send a message"]',
+        'button',
+        'div[role="button"]'
+      ],
+      /send (new|a) message/i
+    );
+
+    if (!btn) {
+      throw new Error('Could not find the "Send new message" button.');
+    }
+
+    btn.click();
+
+    await waitFor_(
+      findRecipientInput_,
+      WAIT_TIMEOUT_MS,
+      200,
+      'Recipient input did not appear.'
+    );
+  }
+
+  function findRecipientInput_() {
+    const pickers = Array.from(document.querySelectorAll('gv-message-party-picker'));
+
+    for (const picker of pickers) {
+      const label = picker.querySelector('mat-label.label');
+      const input =
+        picker.querySelector('input[placeholder="Type a name or phone number"]') ||
+        picker.querySelector('input[placeholder="Add recipients"]') ||
+        picker.querySelector('input.mat-mdc-chip-input');
+
+      if (!input || !isVisible_(input)) continue;
+      if (!label) continue;
+
+      const labelText = (label.textContent || '').trim().toLowerCase();
+      if (labelText === 'to') {
+        return input;
+      }
+    }
+
+    return null;
+  }
+
+  async function fillRecipient_(phoneDigits) {
+  const input = await waitFor_(
+    findRecipientInput_,
+    WAIT_TIMEOUT_MS,
+    200,
+    'Recipient input did not appear.'
+  );
+
+  if (!input) throw new Error('Recipient input did not appear.');
+
+  focusAndClear_(input);
+  insertText_(input, formatPhone_(phoneDigits) || phoneDigits);
+  triggerInputEvents_(input);
+
+  // Wait for the required "Send to ..." confirmation chip popup
+  await waitFor_(
+    findSendToChip_,
+    WAIT_TIMEOUT_MS,
+    100,
+    `Required "Send to" popup did not appear for ${formatPhone_(phoneDigits) || phoneDigits}.`
+  );
+
+  const clicked = clickSendToChip_();
+  if (!clicked) {
+    throw new Error(`Could not click the required "Send to" popup for ${formatPhone_(phoneDigits) || phoneDigits}.`);
+  }
+
+  // Give Voice a moment to accept the recipient
+  await waitMs_(400);
+
+  // Then clean up any leftover overlay
+  await dismissRecipientSuggestions_(input);
+}
+
+function clickSendToChip_() {
+  const chip = findSendToChip_();
+  if (!chip) return false;
+
+  try {
+    chip.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  } catch (_) {}
+
+  try { chip.focus(); } catch (_) {}
+
+  // Native click first
+  try { chip.click(); } catch (_) {}
+
+  // Then synthetic mouse events to make it stick
+  ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(type => {
+    chip.dispatchEvent(new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      view: window
+    }));
+  });
+
+  return true;
+}
+  function findRecipientChip_(phoneDigits) {
+    const chips = Array.from(
+      document.querySelectorAll('gv-message-party-picker mat-chip-row, gv-message-party-picker .chip-row')
+    ).filter(isVisible_);
+
+    if (!chips.length) return null;
+
+    const normalized = String(phoneDigits || '').replace(/\D/g, '');
+    if (normalized) {
+      for (const chip of chips) {
+        const textDigits = (chip.textContent || '').replace(/\D/g, '');
+        if (textDigits.includes(normalized)) {
+          return chip;
+        }
+      }
+    }
+
+    return chips[0];
+  }
+
+  function getRecipientCount_() {
+    const picker = document.querySelector('gv-message-party-picker');
+    if (!picker) return 0;
+
+    const srText = Array.from(picker.querySelectorAll('.cdk-visually-hidden'))
+      .map(el => (el.textContent || '').trim())
+      .find(t => /recipients?\s+added/i.test(t));
+
+    if (!srText) return 0;
+
+    const m = srText.match(/(\d+)\s+recipients?\s+added/i);
+    return m ? Number(m[1]) : 0;
+  }
+
+  function recipientWasAccepted_() {
+    const count = getRecipientCount_();
+    if (count > 0) return true;
+
+    const picker = document.querySelector('gv-message-party-picker');
+    if (!picker) return false;
+
+    const input = picker.querySelector('input.mat-mdc-chip-input');
+    if (!input) return false;
+
+    const placeholder = String(input.getAttribute('placeholder') || '').trim().toLowerCase();
+    if (placeholder === 'add recipients') return true;
+
+    const chips = Array.from(
+      picker.querySelectorAll('mat-chip-row, .chip-row')
+    ).filter(isVisible_);
+
+    return chips.length > 0;
+  }
+
+  function findRecipientOverlay_() {
+  const overlays = Array.from(
+    document.querySelectorAll('.cdk-overlay-pane')
+  ).filter(isVisible_);
+
+  for (const overlay of overlays) {
+    if (overlay.querySelector('gv-contact-list section#contact-list .send-to-button')) {
+      return overlay;
+    }
+  }
+
+  return null;
+}
+
+function findSendToChip_() {
+  const overlay = findRecipientOverlay_();
+  if (!overlay) return null;
+
+  const chip = overlay.querySelector('gv-contact-list section#contact-list .send-to-button');
+  return chip && isVisible_(chip) ? chip : null;
+}
+  async function dismissRecipientSuggestions_(inputEl) {
+    let overlay = findRecipientOverlay_();
+    if (!overlay) return;
+
+    try {
+      overlay.focus();
+    } catch (_) {}
+
+    fireEscapeKey_(overlay);
+    await waitMs_(200);
+
+    overlay = findRecipientOverlay_();
+    if (!overlay) return;
+
+    clickBelowOverlay_(overlay);
+    await waitMs_(250);
+
+    overlay = findRecipientOverlay_();
+    if (!overlay) return;
+
+    const messageBox = findMessageBox_();
+    if (messageBox) {
+      try {
+        messageBox.click();
+      } catch (_) {}
+      await waitMs_(200);
+    }
+
+    overlay = findRecipientOverlay_();
+    if (!overlay) return;
+
+    fireTabKey_(inputEl || document.activeElement || document.body);
+    await waitMs_(200);
+  }
+
+  function clickBelowOverlay_(overlayEl) {
+    const rect = overlayEl.getBoundingClientRect();
+
+    const x = Math.max(20, Math.min(window.innerWidth - 20, rect.left + rect.width / 2));
+    const y = Math.max(20, Math.min(window.innerHeight - 20, rect.bottom + 16));
+
+    const target = document.elementFromPoint(x, y) || document.body;
+
+    ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(type => {
+      target.dispatchEvent(new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX: x,
+        clientY: y
+      }));
+    });
+  }
+
+  function findMessageBox_() {
+    const selectors = [
+      'gv-message-entry textarea[placeholder="Type a message"]',
+      'gv-message-entry textarea[aria-label*="Message"]',
+      'gv-conversation-compose textarea[aria-label*="Message"]',
+      'gv-conversation-compose textarea',
+      'textarea[placeholder="Type a message"]',
+      'textarea[aria-label*="Message"]',
+      '[contenteditable="true"][aria-label*="Message"]',
+      '[contenteditable="true"][role="textbox"]'
+    ];
+
+    for (const sel of selectors) {
+      const els = Array.from(document.querySelectorAll(sel)).filter(isVisible_);
+      if (!els.length) continue;
+
+      els.sort((a, b) => {
+        const ra = a.getBoundingClientRect();
+        const rb = b.getBoundingClientRect();
+        return rb.top - ra.top;
+      });
+
+      return els[0];
+    }
+
+    return null;
+  }
+
+  async function fillMessageBox_(message) {
+    await dismissRecipientSuggestions_(document.activeElement || document.body);
+
+    const box = await waitFor_(
+      findMessageBox_,
+      WAIT_TIMEOUT_MS,
+      200,
+      'Message box did not appear.'
+    );
+
+    if (!box) throw new Error('Could not find the message box.');
+
+    if (typeof box.click === 'function') {
+      box.click();
+      await waitMs_(150);
+    }
+
+    focusAndClear_(box);
+    insertText_(box, message);
+    triggerInputEvents_(box);
+  }
+
+  async function clickSend_(phoneDisplay) {
+    const sendBtn = await waitFor_(() => {
+      const selectors = [
+        'button.send-button[aria-label="Send message"]',
+        'button[aria-label="Send message"]',
+        '.button-container button.send-button',
+        '.button-container button',
+        'button.send-button',
+        'button[mattooltip="Send message"]'
+      ];
+
+      for (const sel of selectors) {
+        const els = Array.from(document.querySelectorAll(sel)).filter(isVisible_);
+        for (const el of els) {
+          const aria = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+          const tooltip = (el.getAttribute('mattooltip') || '').trim().toLowerCase();
+          const cls = String(el.className || '');
+
+          if (
+            aria === 'send message' ||
+            tooltip === 'send message' ||
+            cls.includes('send-button')
+          ) {
+            return el;
+          }
+        }
+      }
+
+      return null;
+    }, WAIT_TIMEOUT_MS, 200, `Send button did not appear for ${phoneDisplay}.`);
+
+    if (!sendBtn) {
+      throw new Error(`Could not find the Send message button for ${phoneDisplay}.`);
+    }
+
+    sendBtn.click();
+    await waitMs_(700);
+  }
+
+  /******************************************************************
+   * DOM helpers
+   ******************************************************************/
+  function findByTextOrAria_(selectors, regex) {
+    for (const sel of selectors) {
+      const els = Array.from(document.querySelectorAll(sel)).filter(isVisible_);
+      for (const el of els) {
+        const text = `${el.textContent || ''} ${el.getAttribute('aria-label') || ''}`.trim();
+        if (regex.test(text)) return el;
+      }
+    }
+    return null;
+  }
+
+  function isVisible_(el) {
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+  }
+
+  function focusAndClear_(el) {
+    el.focus();
+
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      el.value = '';
+      return;
+    }
+
+    if (el.isContentEditable) {
+      el.textContent = '';
+    }
+  }
+
+  function insertText_(el, text) {
+    const value = String(text || '');
+
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      el.value = value;
+      return;
+    }
+
+    if (el.isContentEditable) {
+      el.focus();
+      document.execCommand('selectAll', false, null);
+      document.execCommand('insertText', false, value);
+      if (!el.textContent || el.textContent.trim() !== value.trim()) {
+        el.textContent = value;
+      }
+    }
+  }
+
+  function triggerInputEvents_(el) {
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function fireEnterKey_(el) {
+    const target = el || document.activeElement || document.body;
+    const down = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true });
+    const up = new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true });
+    target.dispatchEvent(down);
+    target.dispatchEvent(up);
+  }
+
+  function fireEscapeKey_(el) {
+    const target = el || document.activeElement || document.body;
+    const down = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true });
+    const up = new KeyboardEvent('keyup', { key: 'Escape', code: 'Escape', bubbles: true });
+    target.dispatchEvent(down);
+    target.dispatchEvent(up);
+  }
+
+  function fireTabKey_(el) {
+    const target = el || document.activeElement || document.body;
+    const down = new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', bubbles: true });
+    const up = new KeyboardEvent('keyup', { key: 'Tab', code: 'Tab', bubbles: true });
+    target.dispatchEvent(down);
+    target.dispatchEvent(up);
+  }
+
+  function waitMs_(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  function waitFor_(fn, timeoutMs = WAIT_TIMEOUT_MS, intervalMs = 200, errorMessage = 'Timed out waiting for Google Voice UI element.') {
+    return new Promise((resolve, reject) => {
+      const start = Date.now();
+
+      const tick = () => {
+        try {
+          const value = fn();
+          if (value) return resolve(value);
+
+          if (Date.now() - start >= timeoutMs) {
+            return reject(new Error(errorMessage));
+          }
+
+          setTimeout(tick, intervalMs);
+        } catch (err) {
+          reject(err);
+        }
+      };
+
+      tick();
+    });
+  }
+})();
