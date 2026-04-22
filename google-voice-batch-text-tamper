@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         google-voice-batch-text
 // @namespace    http://tampermonkey.net/
-// @version      2026-04-22.1
+// @version      2026-04-22.2
 // @description  Batch-compose and send one-to-one Google Voice follow-up texts from voice.google.com
 // @author       Mason Scott
 // @match        https://voice.google.com/*
@@ -567,21 +567,21 @@ function waitForOptional_(fn, timeoutMs = 2000, intervalMs = 100) {
   // 2) suggested/saved contact rows that don't use .send-to-button
   // Accept whichever appears and then confirm recipient is committed.
   await waitForOptional_(
-    () => findSendToChip_() || findRecipientOverlay_() || recipientWasAccepted_(),
+    () => findSendToChip_() || findFirstRecipientOption_() || findRecipientOverlay_() || recipientWasAccepted_(),
     2500,
     100
   );
 
   const sendToChip = findSendToChip_();
   if (sendToChip) {
-    clickSendToChip_();
+    clickElementLikeUser_(sendToChip);
+  } else {
+    const option = findFirstRecipientOption_();
+    if (option) clickElementLikeUser_(option);
   }
 
-  // Give Voice a moment to accept the recipient
-  await waitMs_(400);
-
-  // Then clean up any leftover overlay/popover
-  await dismissRecipientSuggestions_(input);
+  // Enter helps commit the active recipient in the chips input.
+  fireEnterKey_(input);
 
   await waitFor_(
     recipientWasAccepted_,
@@ -589,6 +589,13 @@ function waitForOptional_(fn, timeoutMs = 2000, intervalMs = 100) {
     100,
     `Recipient was not accepted for ${formatPhone_(phoneDigits) || phoneDigits}.`
   );
+
+  // After acceptance, close any leftover suggestion panel without changing chips.
+  await dismissRecipientSuggestions_(input);
+
+  if (!recipientWasAccepted_()) {
+    throw new Error(`Recipient was not accepted for ${formatPhone_(phoneDigits) || phoneDigits}.`);
+  }
 }
 
 function clickSendToChip_() {
@@ -688,6 +695,26 @@ function findSendToChip_() {
 
   const chip = overlay.querySelector('gv-contact-list section#contact-list .send-to-button');
   return chip && isVisible_(chip) ? chip : null;
+}
+
+function findFirstRecipientOption_() {
+  const overlay = findRecipientOverlay_();
+  if (!overlay) return null;
+
+  const selectors = [
+    'mat-option',
+    '.mat-mdc-option',
+    '[role="option"]',
+    '[role="listbox"] mat-option',
+    '[role="listbox"] [role="option"]'
+  ];
+
+  for (const sel of selectors) {
+    const option = Array.from(overlay.querySelectorAll(sel)).find(isVisible_);
+    if (option) return option;
+  }
+
+  return null;
 }
   async function dismissRecipientSuggestions_(inputEl) {
     let overlay = findRecipientOverlay_();
