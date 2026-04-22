@@ -546,24 +546,33 @@ function waitForOptional_(fn, timeoutMs = 2000, intervalMs = 100) {
   insertText_(input, formatPhone_(phoneDigits) || phoneDigits);
   triggerInputEvents_(input);
 
-  // Wait for the required "Send to ..." confirmation chip popup
-  await waitFor_(
-    findSendToChip_,
-    WAIT_TIMEOUT_MS,
-    100,
-    `Required "Send to" popup did not appear for ${formatPhone_(phoneDigits) || phoneDigits}.`
+  // Voice can show either:
+  // 1) a required "Send to ..." chip
+  // 2) suggested/saved contact rows that don't use .send-to-button
+  // Accept whichever appears and then confirm recipient is committed.
+  await waitForOptional_(
+    () => findSendToChip_() || findRecipientOverlay_() || recipientWasAccepted_(),
+    2500,
+    100
   );
 
-  const clicked = clickSendToChip_();
-  if (!clicked) {
-    throw new Error(`Could not click the required "Send to" popup for ${formatPhone_(phoneDigits) || phoneDigits}.`);
+  const sendToChip = findSendToChip_();
+  if (sendToChip) {
+    clickSendToChip_();
   }
 
   // Give Voice a moment to accept the recipient
   await waitMs_(400);
 
-  // Then clean up any leftover overlay
+  // Then clean up any leftover overlay/popover
   await dismissRecipientSuggestions_(input);
+
+  await waitFor_(
+    recipientWasAccepted_,
+    WAIT_TIMEOUT_MS,
+    100,
+    `Recipient was not accepted for ${formatPhone_(phoneDigits) || phoneDigits}.`
+  );
 }
 
 function clickSendToChip_() {
@@ -650,7 +659,10 @@ function clickSendToChip_() {
   ).filter(isVisible_);
 
   for (const overlay of overlays) {
-    if (overlay.querySelector('gv-contact-list section#contact-list .send-to-button')) {
+    const hasSendToChip = overlay.querySelector('gv-contact-list section#contact-list .send-to-button');
+    const hasContactList = overlay.querySelector('gv-contact-list');
+    const hasListbox = overlay.querySelector('[role="listbox"], [role="option"], mat-option, .mat-mdc-option');
+    if (hasSendToChip || hasContactList || hasListbox) {
       return overlay;
     }
   }
@@ -702,9 +714,29 @@ function findSendToChip_() {
 
   function clickBelowOverlay_(overlayEl) {
     const rect = overlayEl.getBoundingClientRect();
+    const pad = 20;
+    const candidates = [
+      { x: rect.left - 16, y: rect.top - 16 },
+      { x: rect.right + 16, y: rect.top - 16 },
+      { x: rect.left - 16, y: rect.bottom + 16 },
+      { x: rect.right + 16, y: rect.bottom + 16 },
+      { x: window.innerWidth / 2, y: rect.bottom + 24 },
+      { x: pad, y: pad }
+    ];
 
-    const x = Math.max(20, Math.min(window.innerWidth - 20, rect.left + rect.width / 2));
-    const y = Math.max(20, Math.min(window.innerHeight - 20, rect.bottom + 16));
+    let x = pad;
+    let y = pad;
+    for (const point of candidates) {
+      const cx = Math.max(pad, Math.min(window.innerWidth - pad, Math.round(point.x)));
+      const cy = Math.max(pad, Math.min(window.innerHeight - pad, Math.round(point.y)));
+      const outsideHoriz = cx < rect.left || cx > rect.right;
+      const outsideVert = cy < rect.top || cy > rect.bottom;
+      if (outsideHoriz || outsideVert) {
+        x = cx;
+        y = cy;
+        break;
+      }
+    }
 
     const target = document.elementFromPoint(x, y) || document.body;
 
