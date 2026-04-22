@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         google-voice-batch-text
 // @namespace    http://tampermonkey.net/
-// @version      2026-04-21.3
+// @version      2026-04-22.1
 // @description  Batch-compose and send one-to-one Google Voice follow-up texts from voice.google.com
 // @author       Mason Scott
 // @match        https://voice.google.com/*
@@ -382,12 +382,28 @@ function clickElementLikeUser_(el) {
   try { el.focus(); } catch (_) {}
 
   ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(type => {
-    el.dispatchEvent(new MouseEvent(type, {
-      bubbles: true,
-      cancelable: true,
-      view: window
-    }));
+    dispatchMouseEvent_(el, type);
   });
+}
+
+function dispatchMouseEvent_(target, type, extraInit = {}) {
+  if (!target) return;
+
+  const init = {
+    bubbles: true,
+    cancelable: true,
+    ...extraInit
+  };
+
+  const view = target.ownerDocument && target.ownerDocument.defaultView;
+  if (view && typeof view === 'object') {
+    try {
+      target.dispatchEvent(new MouseEvent(type, { ...init, view }));
+      return;
+    } catch (_) {}
+  }
+
+  target.dispatchEvent(new MouseEvent(type, init));
 }
 
 function waitForOptional_(fn, timeoutMs = 2000, intervalMs = 100) {
@@ -590,11 +606,7 @@ function clickSendToChip_() {
 
   // Then synthetic mouse events to make it stick
   ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(type => {
-    chip.dispatchEvent(new MouseEvent(type, {
-      bubbles: true,
-      cancelable: true,
-      view: window
-    }));
+    dispatchMouseEvent_(chip, type);
   });
 
   return true;
@@ -741,13 +753,10 @@ function findSendToChip_() {
     const target = document.elementFromPoint(x, y) || document.body;
 
     ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(type => {
-      target.dispatchEvent(new MouseEvent(type, {
-        bubbles: true,
-        cancelable: true,
-        view: window,
+      dispatchMouseEvent_(target, type, {
         clientX: x,
         clientY: y
-      }));
+      });
     });
   }
 
