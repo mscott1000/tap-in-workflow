@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         google-voice-batch-text
 // @namespace    http://tampermonkey.net/
-// @version      2026-04-23.1
+// @version      2026-04-23.2
 // @description  Sidebar assistant for pairing names + phone numbers and quickly copying number/text snippets in Google Voice.
 // @author       Mason Scott
 // @match        https://voice.google.com/*
@@ -23,8 +23,8 @@
       position:fixed;
       right:12px;
       bottom:12px;
-      width:430px;
-      max-height:82vh;
+      width:366px;
+      max-height:94.3vh;
       z-index:999999;
       background:#f8fafc;
       color:#0f172a;
@@ -66,6 +66,10 @@
       gap:4px;
       width:100%;
     }
+    #${APP_ID} .field.half{
+      width:calc(50% - 4px);
+      min-width:0;
+    }
     #${APP_ID} label{
       font-size:11px;
       font-weight:700;
@@ -73,7 +77,7 @@
     }
     #${APP_ID} textarea{
       width:100%;
-      min-height:92px;
+      min-height:74px;
       resize:vertical;
       border:1px solid #cbd5e1;
       border-radius:10px;
@@ -82,9 +86,7 @@
       background:#fff;
       color:#0f172a;
     }
-    #${APP_ID} textarea#gvBatchMessage{
-      min-height:140px;
-    }
+    #${APP_ID} textarea#gvBatchMessage{ min-height:74px; }
     #${APP_ID} button{
       border:1px solid #cbd5e1;
       border-radius:10px;
@@ -156,27 +158,34 @@
       <button id="gvBatchClose" title="Minimize">×</button>
     </div>
     <div class="body">
-      <div class="field">
-        <label>Phone numbers (one per line)</label>
-        <textarea id="gvBatchPhones" placeholder="(314) 302-7864&#10;(314) 435-9029"></textarea>
+      <div class="row">
+        <div class="field half">
+          <label>First names (one per line)</label>
+          <textarea id="gvBatchNames" placeholder="Yasmine&#10;Shauron"></textarea>
+        </div>
+        <div class="field half">
+          <label>Last names (one per line)</label>
+          <textarea id="gvBatchLastNames" placeholder="Smith&#10;Jones"></textarea>
+        </div>
       </div>
 
-      <div class="field">
-        <label>Names (one per line, matched by row)</label>
-        <textarea id="gvBatchNames" placeholder="Yasmine&#10;Shauron"></textarea>
-      </div>
-
-      <div class="field">
-        <label>Message body</label>
-        <textarea id="gvBatchMessage" placeholder="this is Mason with Tap In..."></textarea>
+      <div class="row">
+        <div class="field half">
+          <label>Message body</label>
+          <textarea id="gvBatchMessage" placeholder="this is Mason with Tap In..."></textarea>
+        </div>
+        <div class="field half">
+          <label>Phone numbers (one per line)</label>
+          <textarea id="gvBatchPhones" placeholder="(314) 302-7864&#10;(314) 435-9029"></textarea>
+        </div>
       </div>
 
       <div class="row">
         <button id="gvBatchLoad" class="primary">Load Pairs</button>
         <button id="gvBatchNumber">Number</button>
         <button id="gvBatchText">Text</button>
+        <button id="gvBatchName">Name</button>
         <button id="gvBatchNext">Next</button>
-        <button id="gvBatchSave">Save Draft</button>
         <button id="gvBatchClear">Clear</button>
       </div>
 
@@ -190,6 +199,7 @@
 
   const $phones = root.querySelector('#gvBatchPhones');
   const $names = root.querySelector('#gvBatchNames');
+  const $lastNames = root.querySelector('#gvBatchLastNames');
   const $message = root.querySelector('#gvBatchMessage');
   const $pair = root.querySelector('#gvBatchStatus');
   const $preview = root.querySelector('#gvBatchPreview');
@@ -199,6 +209,7 @@
     const state = {
       phones: $phones.value || '',
       names: $names.value || '',
+      lastNames: $lastNames.value || '',
       message: $message.value || ''
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -211,6 +222,7 @@
       const state = JSON.parse(raw);
       $phones.value = state.phones || '';
       $names.value = state.names || '';
+      $lastNames.value = state.lastNames || '';
       $message.value = state.message || '';
     } catch (_) {}
   }
@@ -238,22 +250,17 @@
     return String(name || '').trim();
   }
 
-  function firstName_(name) {
-    const trimmed = normalizeName_(name);
-    if (!trimmed) return '';
-    return trimmed.split(/\s+/)[0];
-  }
-
-  function composeMessage_(name, baseMessage) {
+  function composeMessage_(firstName, baseMessage) {
     const body = String(baseMessage || '').trim();
-    const first = firstName_(name);
+    const first = normalizeName_(firstName);
     if (!body) return first ? `Hi ${first},` : 'Hi,';
     return first ? `Hi ${first}, ${body}` : `Hi, ${body}`;
   }
 
   function buildQueue_() {
     const phones = parseLines_($phones.value);
-    const names = parseLines_($names.value);
+    const firstNames = parseLines_($names.value);
+    const lastNames = parseLines_($lastNames.value);
 
     if (!phones.length) throw new Error('Enter at least one phone number.');
 
@@ -264,7 +271,8 @@
         phoneRaw: phone,
         phoneDigits: digits,
         phoneDisplay: formatPhone_(digits) || phone.trim(),
-        name: normalizeName_(names[idx] || '')
+        firstName: normalizeName_(firstNames[idx] || ''),
+        lastName: normalizeName_(lastNames[idx] || '')
       };
     });
 
@@ -282,7 +290,8 @@
       return;
     }
 
-    const safeName = focusedPair.name || '(no name provided)';
+    const fullName = [focusedPair.firstName, focusedPair.lastName].filter(Boolean).join(' ');
+    const safeName = fullName || '(no name provided)';
     const safePhone = focusedPair.phoneDisplay || focusedPair.phoneRaw || '(no number)';
 
     $pair.innerHTML = `
@@ -302,7 +311,8 @@
     const show = queue.slice(0, 5);
 
     show.forEach(item => {
-      lines.push(`[${item.index}] ${item.name || '(no name)'} -> ${item.phoneDisplay}`);
+      const label = [item.firstName, item.lastName].filter(Boolean).join(' ') || '(no name)';
+      lines.push(`[${item.index}] ${label} -> ${item.phoneDisplay}`);
     });
 
     if (queue.length > show.length) {
@@ -372,14 +382,10 @@
     }
   });
 
-  root.querySelector('#gvBatchSave').addEventListener('click', () => {
-    saveState();
-    renderFocusedPair_();
-  });
-
   root.querySelector('#gvBatchClear').addEventListener('click', () => {
     $phones.value = '';
     $names.value = '';
+    $lastNames.value = '';
     $message.value = '';
     queue = [];
     focusedPair = null;
@@ -409,8 +415,19 @@
   root.querySelector('#gvBatchText').addEventListener('click', async () => {
     try {
       if (!focusedPair) throw new Error('Load at least one pair first.');
-      const message = composeMessage_(focusedPair.name, $message.value || '');
+      const message = composeMessage_(focusedPair.firstName, $message.value || '');
       await copyToClipboard_(message);
+    } catch (err) {
+      $pair.textContent = `Copy error: ${String(err.message || err)}`;
+    }
+  });
+
+  root.querySelector('#gvBatchName').addEventListener('click', async () => {
+    try {
+      if (!focusedPair) throw new Error('Load at least one pair first.');
+      const fullName = [focusedPair.firstName, focusedPair.lastName].filter(Boolean).join(' ');
+      if (!fullName) throw new Error('Focused pair has no name.');
+      await copyToClipboard_(fullName);
     } catch (err) {
       $pair.textContent = `Copy error: ${String(err.message || err)}`;
     }
@@ -426,6 +443,7 @@
     queue.shift();
     removeFirstTextareaLine_($phones);
     removeFirstTextareaLine_($names);
+    removeFirstTextareaLine_($lastNames);
     focusedPair = queue[0] || null;
     saveState();
     renderFocusedPair_();
