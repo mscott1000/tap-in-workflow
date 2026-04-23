@@ -1,0 +1,534 @@
+// ==UserScript==
+// @name         Upcoming Court Date search
+// @namespace    icbincn-standalone
+// @version      1.1.0
+// @description  Standalone Case.net batch case-number lookup for upcoming court dates. Does not modify ICBiNCn UI.
+// @match        https://www.courts.mo.gov/*
+// @grant        GM_addStyle
+// @grant        GM_setClipboard
+// ==/UserScript==
+
+(function () {
+  'use strict';
+
+  const PANEL_ID = 'cnUpcomingBatchPanelStandalone';
+  const STORAGE_INPUT = 'cn_upcoming_batch_input_v1';
+  const STORAGE_OUTPUT = 'cn_upcoming_batch_output_v1';
+  const STORAGE_DEBUG = 'cn_upcoming_batch_debug_v1';
+  const STORAGE_CONCURRENCY = 'cn_upcoming_batch_concurrency_v1';
+  const STORAGE_STOP_REASON = 'cn_upcoming_batch_stop_reason_v1';
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+  const DEFAULT_COURT_ID = 'CT21';
+  const COURT_ID_SWEEP_MAX = 250;
+  const DEFAULT_CONCURRENCY = 1;
+  const MAX_CONCURRENCY = 10;
+  let stopRequested = false;
+  let activeRun = null;
+
+  function normalizeCourtId(courtId) {
+    const raw = norm(courtId || '').toUpperCase();
+    if (!raw) return '';
+    if (/^CT[0-9A-Z]+$/.test(raw)) return raw;
+    if (/^\d+$/.test(raw)) return `CT${raw}`;
+    return raw;
+  }
+
+  function normalizeUrl(u) {
+    try {
+      const url = new URL(u, location.href);
+      url.hash = '';
+      return url.toString();
+    } catch {
+      return String(u || '');
+    }
+  }
+
+  function parseCaseFromUrl(u) {
+    try {
+      const url = new URL(u, location.href);
+      const sp = url.searchParams;
+      const caseNumber = sp.get('caseNumber') || sp.get('inputVO.caseNumber') || sp.get('ci') || '';
+      const courtId = sp.get('courtId') || sp.get('inputVO.courtId') || sp.get('courtCode') || sp.get('l') || '';
+      const cn = norm(caseNumber).toUpperCase();
+      const ct = norm(courtId).toUpperCase();
+      if (!cn || !ct) return null;
+      return { caseKey: `${cn}|${ct}`, caseNumber: cn, courtId: ct, url: normalizeUrl(url.toString()) };
+    } catch {
+      return null;
+    }
+  }
+
+  function extractCaseLinksFromHtml(htmlText) {
+    const out = [];
+    const seen = new Set();
+    const doc = new DOMParser().parseFromString(String(htmlText || ''), 'text/html');
+    const links = [...doc.querySelectorAll('a[href*="caseNumber="],a[href*="inputVO.caseNumber="],a[href*="ci="]')];
+    for (const a of links) {
+      const parsed = parseCaseFromUrl(a.href || '');
+      if (!parsed?.caseKey || seen.has(parsed.caseKey)) continue;
+      seen.add(parsed.caseKey);
+      out.push(parsed);
+    }
+    return out;
+  }
+
+  function extractCourtIdsFromText(text) {
+    const out = new Set();
+    const src = String(text || '');
+    const add = (v) => {
+      const ct = norm(v || '').toUpperCase();
+      if (/^CT[0-9A-Z]+$/.test(ct)) out.add(ct);
+    };
+
+    const patterns = [
+      /(?:inputVO\.courtId|courtId|courtCode|[?&]l)=([A-Z]{2}[0-9A-Z]+)/gi,
+      /(?:inputVO\.courtId|courtId)\s*[:=]\s*['"]([A-Z]{2}[0-9A-Z]+)['"]/gi,
+      /name=["']inputVO\.courtId["'][^>]*value=["']([A-Z]{2}[0-9A-Z]+)["']/gi
+    ];
+    for (const re of patterns) {
+      let m;
+      while ((m = re.exec(src))) add(m[1]);
+    }
+    return [...out];
+  }
+
+  function ensureNotStopped() {
+    if (stopRequested) throw new Error('Stopped by user');
+  }
+
+  async function findCaseCandidatesByCaseNumber(caseNumber, signal) {
+    ensureNotStopped();
+    const url = new URL('/casenet/caseNoSearch.do', location.origin);
+    const body = new URLSearchParams();
+    body.set('caseNumber', caseNumber);
+    body.set('inputVO.caseNumber', caseNumber);
+    body.set('newSearch', 'Y');
+    const resp = await fetch(url.toString(), {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+      body: body.toString(),
+      signal
+    });
+    const txt = await resp.text();
+    appendDebug('case_number_search_response', {
+      caseNumber,
+      httpStatus: resp.status,
+      ok: !!resp.ok,
+      responseLength: txt.length
+    });
+    if (!resp.ok) throw new Error(`caseNoSearch HTTP ${resp.status}`);
+    return extractCaseLinksFromHtml(txt);
+  }
+
+  GM_addStyle(`
+    #${PANEL_ID}{position:fixed;right:12px;bottom:12px;z-index:9999999;width:460px;max-height:70vh;background:#f8fafc;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.25);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;flex-direction:column;overflow:hidden}
+    #${PANEL_ID} .hd{padding:10px 12px;background:#e2e8f0;border-bottom:1px solid #cbd5e1;font-weight:800;font-size:13px}
+    #${PANEL_ID} .bd{padding:10px;overflow:auto;display:flex;flex-direction:column;gap:8px}
+    #${PANEL_ID} .ft{padding:10px;background:#e2e8f0;border-top:1px solid #cbd5e1;font-size:12px;color:#334155;white-space:pre-wrap}
+    #${PANEL_ID} textarea{width:100%;min-height:96px;max-height:200px;resize:vertical;border:1px solid #94a3b8;border-radius:8px;padding:8px;font-size:12px;background:#fff}
+    #${PANEL_ID} textarea.debug{min-height:80px;max-height:180px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:11px}
+    #${PANEL_ID} .row{display:flex;gap:8px;flex-wrap:wrap}
+    #${PANEL_ID} button{border:1px solid #64748b;background:#fff;color:#0f172a;border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;cursor:pointer}
+    #${PANEL_ID} button.run{background:#166534;color:#fff;border-color:#14532d}
+    #${PANEL_ID} button.copy{background:#1d4ed8;color:#fff;border-color:#1e3a8a}
+    #${PANEL_ID} button.stop{background:#b91c1c;color:#fff;border-color:#7f1d1d}
+    #${PANEL_ID} button:disabled{opacity:.55;cursor:not-allowed}
+  `);
+
+  const panel = document.createElement('div');
+  panel.id = PANEL_ID;
+  panel.innerHTML = `
+    <div class="hd">Case.net Upcoming Court Date Batch Lookup (Standalone)</div>
+    <div class="bd">
+      <label style="font-size:12px;font-weight:700;color:#334155">Case Numbers (newline-separated)</label>
+      <textarea id="cnStandaloneInput" placeholder="18SL-CR01234\n704581692"></textarea>
+      <div class="row" style="align-items:center">
+        <label for="cnStandaloneConcurrency" style="font-size:12px;font-weight:700;color:#334155">Concurrency</label>
+        <input id="cnStandaloneConcurrency" type="number" min="1" max="10" step="1" style="width:82px;border:1px solid #94a3b8;border-radius:8px;padding:6px 8px;font-size:12px" />
+      </div>
+      <div class="row">
+        <button class="run" id="cnStandaloneRun">Find Upcoming Dates</button>
+        <button class="stop" id="cnStandaloneStop" disabled>Stop</button>
+        <button id="cnStandaloneClear">Clear</button>
+        <button class="copy" id="cnStandaloneCopy">Copy Results</button>
+      </div>
+      <label style="font-size:12px;font-weight:700;color:#334155">Results</label>
+      <textarea id="cnStandaloneOutput" readonly placeholder="Results will appear here"></textarea>
+      <div class="row">
+        <label style="font-size:12px;font-weight:700;color:#334155;flex:1;align-self:center;">Debug Log</label>
+        <button id="cnStandaloneCopyDebug">Copy Debug</button>
+        <button id="cnStandaloneClearDebug">Clear Debug</button>
+      </div>
+      <textarea class="debug" id="cnStandaloneDebug" readonly placeholder="Debug rows will appear here"></textarea>
+    </div>
+    <div class="ft" id="cnStandaloneStatus">Ready.</div>
+  `;
+  (document.body || document.documentElement).appendChild(panel);
+
+  const $input = panel.querySelector('#cnStandaloneInput');
+  const $output = panel.querySelector('#cnStandaloneOutput');
+  const $debug = panel.querySelector('#cnStandaloneDebug');
+  const $status = panel.querySelector('#cnStandaloneStatus');
+  const $concurrency = panel.querySelector('#cnStandaloneConcurrency');
+  const $runBtn = panel.querySelector('#cnStandaloneRun');
+  const $stopBtn = panel.querySelector('#cnStandaloneStop');
+
+  $input.value = localStorage.getItem(STORAGE_INPUT) || '';
+  $output.value = localStorage.getItem(STORAGE_OUTPUT) || '';
+  $debug.value = localStorage.getItem(STORAGE_DEBUG) || '';
+
+  function normalizeConcurrency(raw) {
+    const n = Number.parseInt(String(raw ?? ''), 10);
+    if (!Number.isFinite(n)) return DEFAULT_CONCURRENCY;
+    return Math.max(1, Math.min(MAX_CONCURRENCY, n));
+  }
+
+  $concurrency.value = String(normalizeConcurrency(localStorage.getItem(STORAGE_CONCURRENCY)));
+
+  function setStatus(msg) {
+    $status.textContent = msg;
+  }
+
+  function saveDrafts() {
+    localStorage.setItem(STORAGE_INPUT, $input.value || '');
+    localStorage.setItem(STORAGE_OUTPUT, $output.value || '');
+    localStorage.setItem(STORAGE_DEBUG, $debug.value || '');
+    localStorage.setItem(STORAGE_CONCURRENCY, String(normalizeConcurrency($concurrency.value)));
+  }
+
+  function appendDebug(event, details = {}) {
+    const row = {
+      at: new Date().toISOString(),
+      event: norm(event),
+      ...details
+    };
+    const line = JSON.stringify(row);
+    $debug.value = $debug.value ? `${$debug.value}\n${line}` : line;
+    saveDrafts();
+  }
+
+  function parseInput(text) {
+    const seen = new Set();
+    const rows = [];
+    for (const line of String(text || '').split(/\r?\n/)) {
+      const s = norm(line);
+      if (!s) continue;
+      const m = s.match(/^([A-Z0-9-]+)\s*(?:[|,/]|\s+COURT\s*ID\s*:?)\s*([A-Z0-9]+)$/i);
+      const caseNumber = norm((m ? m[1] : s)).toUpperCase();
+      const courtId = norm(m ? m[2] : '').toUpperCase();
+      const key = `${caseNumber}|${courtId}`;
+      if (!caseNumber || seen.has(key)) continue;
+      seen.add(key);
+      rows.push({ caseNumber, courtId });
+    }
+    return rows;
+  }
+
+  function buildCaseHeaderUrl(caseNumber, courtId) {
+    const url = new URL('/casenet/cases/newHeader.do', location.origin);
+    url.searchParams.set('inputVO.caseNumber', caseNumber);
+    url.searchParams.set('inputVO.courtId', normalizeCourtId(courtId || DEFAULT_COURT_ID));
+    url.searchParams.set('inputVO.isTicket', 'false');
+    return url.toString();
+  }
+
+  async function postJson(path, bodyObj, qs = '', signal) {
+    ensureNotStopped();
+    const url = new URL(path, location.origin);
+    if (qs) url.search = qs;
+    const body = new URLSearchParams();
+    for (const [k, v] of Object.entries(bodyObj || {})) body.set(k, String(v ?? ''));
+    const resp = await fetch(url.toString(), {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'Accept': 'application/json,text/javascript, */*; q=0.01',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: body.toString(),
+      signal
+    });
+    const txt = await resp.text();
+    const ct = String(resp.headers.get('content-type') || '').toLowerCase();
+    appendDebug('json_post_response', {
+      path,
+      httpStatus: resp.status,
+      ok: !!resp.ok,
+      bodyKeys: Object.keys(bodyObj || {}),
+      query: qs || '',
+      responseLength: txt.length,
+      contentType: ct,
+      redirected: !!resp.redirected
+    });
+    if (!resp.ok) throw new Error(`${path} HTTP ${resp.status}`);
+    try { return JSON.parse(txt); } catch {}
+    const trimmed = String(txt || '').trim();
+    const jsonStart = Math.max(trimmed.indexOf('{'), trimmed.indexOf('['));
+    if (jsonStart >= 0) {
+      try { return JSON.parse(trimmed.slice(jsonStart)); } catch {}
+    }
+    appendDebug('json_post_parse_failed', {
+      path,
+      contentType: ct,
+      responsePreview: trimmed.slice(0, 240)
+    });
+    const err = new Error(`${path} non-JSON response`);
+    err.meta = { path, contentType: ct, responseText: txt };
+    throw err;
+  }
+
+  function getUpcomingCourtDate(docketList) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const all = [];
+
+    for (const entry of docketList || []) {
+      for (const s of (entry?.associatedDocketScheduledInfo || [])) {
+        const d = norm(s?.associatedDate || '');
+        if (!/^\d{2}\/\d{2}\/\d{4}$/.test(d)) continue;
+        const [mm, dd, yyyy] = d.split('/').map(Number);
+        const dt = new Date(yyyy, mm - 1, dd);
+        dt.setHours(0, 0, 0, 0);
+        all.push({
+          dt,
+          d,
+          time: norm(s?.associatedTime || ''),
+          judge: norm(s?.associatedName || ''),
+          locationText: norm(s?.associatedText || '')
+        });
+      }
+    }
+
+    all.sort((a, b) => a.dt - b.dt);
+    const next = all.find((x) => x.dt.getTime() >= today.getTime());
+    if (!next) return 'No Upcoming Court Date Found';
+    return [next.d, next.time || '- - -', next.judge || '- - -', next.locationText || '- - -'].join(' ; ');
+  }
+
+  function buildCourtIdAttemptOrder(initialCourtId, discoveredCourtIds = []) {
+    const out = [];
+    const seen = new Set();
+    const push = (v) => {
+      const ct = normalizeCourtId(v);
+      if (!ct || seen.has(ct)) return;
+      seen.add(ct);
+      out.push(ct);
+    };
+
+    push(initialCourtId);
+    push(DEFAULT_COURT_ID);
+    push('CT22');
+    for (const ct of discoveredCourtIds || []) push(ct);
+    for (let i = 1; i <= COURT_ID_SWEEP_MAX; i++) push(`CT${i}`);
+    return out;
+  }
+
+  async function scrapeUpcomingDate({ caseNumber, courtId }, signal) {
+    ensureNotStopped();
+    const mkHeaderPayload = (ct) => ({
+      caseNumber,
+      courtId: normalizeCourtId(ct) || '',
+      isTicket: '',
+      locnCode: '',
+      isCriminal: '',
+      diposed: '',
+      pleaAndPayInd: ''
+    });
+
+    const candidates = await findCaseCandidatesByCaseNumber(caseNumber, signal).catch(() => []);
+    const caseNoSearchCourtIds = [...new Set(candidates.map((c) => normalizeCourtId(c?.courtId || '')).filter(Boolean))];
+    const attemptOrder = buildCourtIdAttemptOrder(courtId, caseNoSearchCourtIds);
+    appendDebug('header_resolve_attempt_order', {
+      caseNumber,
+      suppliedCourtId: normalizeCourtId(courtId || ''),
+      candidateCount: candidates.length,
+      caseNoSearchCourtIds,
+      attemptCount: attemptOrder.length,
+      firstAttempts: attemptOrder.slice(0, 20)
+    });
+
+    let header;
+    let lastErr = null;
+    for (const ct of attemptOrder) {
+      ensureNotStopped();
+      try {
+        header = await postJson('/casenet/cases/newHeaderData.do', mkHeaderPayload(ct), '', signal);
+        appendDebug('header_resolve_success', { caseNumber, attemptedCourtId: ct });
+        break;
+      } catch (err) {
+        lastErr = err;
+        const msg = String(err?.message || err);
+        if (!/newHeaderData\.do non-JSON response/i.test(msg)) continue;
+        const htmlCourtIds = extractCourtIdsFromText(err?.meta?.responseText || '');
+        const merged = [...new Set([...caseNoSearchCourtIds, ...htmlCourtIds])];
+        if (merged.length) {
+          const extra = buildCourtIdAttemptOrder('', merged).filter((id) => !attemptOrder.includes(id));
+          attemptOrder.push(...extra);
+        }
+      }
+    }
+    if (!header) throw lastErr || new Error('Unable to resolve header data');
+
+    const resolvedCourtId = normalizeCourtId(header?.courtId || courtId || '');
+    if (!resolvedCourtId) throw new Error('Unable to resolve courtId from header data');
+    const resolvedHeaderUrl = buildCaseHeaderUrl(caseNumber, resolvedCourtId);
+    appendDebug('header_resolved', { caseNumber, resolvedCourtId, resolvedHeaderUrl });
+
+    const docket = await postJson(
+      '/casenet/cases/docketEntriesSearch.do',
+      { caseNumber, courtId: resolvedCourtId, isTicket: '', tabName: 'Docket' },
+      'displayOption=A&sortOption=D&hasChange=false',
+      signal
+    );
+
+    return {
+      upcoming: getUpcomingCourtDate(docket?.docketTabModelList || []),
+      resolvedCourtId,
+      resolvedHeaderUrl
+    };
+  }
+
+  async function runPool(items, limit, worker, onProgress) {
+    const total = items.length;
+    const results = new Array(total);
+    if (!total) return results;
+    const conc = Math.max(1, Math.min(normalizeConcurrency(limit), total));
+    let nextIdx = 0;
+    let done = 0;
+
+    async function runOne() {
+      while (true) {
+        const idx = nextIdx++;
+        if (idx >= total) return;
+        results[idx] = await worker(items[idx], idx);
+        done += 1;
+        if (typeof onProgress === 'function') onProgress(done, total);
+      }
+    }
+
+    await Promise.all(Array.from({ length: conc }, () => runOne()));
+    return results;
+  }
+
+  async function runBatch() {
+    const requested = parseInput($input.value);
+    if (!requested.length) {
+      setStatus('Enter at least one case number.');
+      return;
+    }
+
+    const conc = normalizeConcurrency($concurrency.value);
+    $concurrency.value = String(conc);
+    stopRequested = false;
+    activeRun = { controller: new AbortController() };
+    $runBtn.disabled = true;
+    $stopBtn.disabled = false;
+
+    appendDebug('batch_start', {
+      requestedCount: requested.length,
+      hasOutput: !!norm($output.value || ''),
+      concurrency: conc
+    });
+    setStatus(`Resolving ${requested.length} case number(s) at concurrency ${conc}...`);
+
+    const lines = await runPool(
+      requested,
+      conc,
+      async (item, i) => {
+        try {
+          const seed = { caseNumber: item.caseNumber, courtId: normalizeCourtId(item.courtId || DEFAULT_COURT_ID) };
+          const scraped = await scrapeUpcomingDate(seed, activeRun?.controller?.signal);
+          const upcoming = scraped?.upcoming || 'No Upcoming Court Date Found';
+          appendDebug('batch_case_complete', {
+            requestedCaseNumber: item.caseNumber,
+            resolvedCaseNumber: item.caseNumber,
+            courtId: scraped?.resolvedCourtId || seed.courtId,
+            resolvedHeaderUrl: scraped?.resolvedHeaderUrl || buildCaseHeaderUrl(item.caseNumber, seed.courtId),
+            result: upcoming
+          });
+          await sleep(100);
+          return `${upcoming} ; ${item.caseNumber}`;
+        } catch (err) {
+          appendDebug('batch_case_error', {
+            caseNumber: item.caseNumber,
+            message: String(err?.message || err)
+          });
+          await sleep(100);
+          return `Error (${String(err?.message || err)}) ; ${item.caseNumber}`;
+        } finally {
+          appendDebug('batch_case_progress', {
+            index: i + 1,
+            total: requested.length,
+            caseNumber: item.caseNumber
+          });
+        }
+      },
+      (done, total) => setStatus(`Processed ${done}/${total} case number(s) (concurrency ${conc})...`)
+    );
+
+    $output.value = lines.join('\n');
+    appendDebug('batch_done', { resultCount: lines.length });
+    saveDrafts();
+    if (stopRequested) {
+      setStatus(`Stopped. ${lines.length} result(s) collected.`);
+      localStorage.setItem(STORAGE_STOP_REASON, 'Stopped by user');
+    } else {
+      setStatus(`Done. ${lines.length} result(s).`);
+      localStorage.removeItem(STORAGE_STOP_REASON);
+    }
+    activeRun = null;
+    $runBtn.disabled = false;
+    $stopBtn.disabled = true;
+  }
+
+  $runBtn.addEventListener('click', () => {
+    runBatch().catch((e) => {
+      setStatus(`Error: ${String(e?.message || e)}`);
+      activeRun = null;
+      $runBtn.disabled = false;
+      $stopBtn.disabled = true;
+    });
+  });
+
+  $stopBtn.addEventListener('click', () => {
+    if (!activeRun) return;
+    stopRequested = true;
+    activeRun.controller.abort();
+    appendDebug('stop_requested', {});
+    setStatus('Stopping...');
+    $stopBtn.disabled = true;
+  });
+
+  panel.querySelector('#cnStandaloneClear').addEventListener('click', () => {
+    $input.value = '';
+    $output.value = '';
+    saveDrafts();
+    setStatus('Cleared.');
+  });
+
+  panel.querySelector('#cnStandaloneCopy').addEventListener('click', () => {
+    GM_setClipboard($output.value || '', 'text');
+    setStatus('Results copied to clipboard.');
+  });
+
+  panel.querySelector('#cnStandaloneCopyDebug').addEventListener('click', () => {
+    GM_setClipboard($debug.value || '(no debug rows)', 'text');
+    setStatus('Debug copied to clipboard.');
+  });
+
+  panel.querySelector('#cnStandaloneClearDebug').addEventListener('click', () => {
+    $debug.value = '';
+    saveDrafts();
+    setStatus('Debug cleared.');
+  });
+
+  $input.addEventListener('input', saveDrafts);
+  $concurrency.addEventListener('input', () => {
+    $concurrency.value = String(normalizeConcurrency($concurrency.value));
+    saveDrafts();
+  });
+})();
