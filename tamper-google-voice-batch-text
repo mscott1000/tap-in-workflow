@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         google-voice-batch-text
 // @namespace    http://tampermonkey.net/
-// @version      2026-04-22.4
-// @description  Batch-compose and send one-to-one Google Voice follow-up texts from voice.google.com
+// @version      2026-04-23.1
+// @description  Sidebar assistant for pairing names + phone numbers and quickly copying number/text snippets in Google Voice.
 // @author       Mason Scott
 // @match        https://voice.google.com/*
 // @run-at       document-idle
@@ -12,23 +12,12 @@
 (function () {
   'use strict';
 
-  /******************************************************************
-   * Config
-   ******************************************************************/
   const APP_ID = 'gvBatchTextTool';
   const STORAGE_KEY = 'gv_batch_sender_state_v1';
 
-  const SEND_DELAY_MS = 1800;
-  const AFTER_RECIPIENT_DELAY_MS = 900;
-  const AFTER_COMPOSE_DELAY_MS = 600;
-  const WAIT_TIMEOUT_MS = 15000;
+  let queue = [];
+  let focusedPair = null;
 
-  let stopRequested = false;
-  let isRunning = false;
-
-  /******************************************************************
-   * Styles
-   ******************************************************************/
   GM_addStyle(`
     #${APP_ID}{
       position:fixed;
@@ -111,17 +100,11 @@
       color:#fff;
       border-color:#1d4ed8;
     }
-    #${APP_ID} button.danger{
-      background:#b91c1c;
-      color:#fff;
-      border-color:#991b1b;
-    }
     #${APP_ID} button:disabled{
       opacity:.55;
       cursor:not-allowed;
     }
-    #${APP_ID} .status{
-      white-space:pre-wrap;
+    #${APP_ID} .pair{
       font-size:12px;
       line-height:1.4;
       color:#334155;
@@ -154,16 +137,22 @@
     #${APP_ID}.collapsed .body{
       display:none;
     }
+    #${APP_ID} .pair-name{
+      font-weight:700;
+      color:#0f172a;
+    }
+    #${APP_ID} .pair-phone{
+      margin-top:2px;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+      color:#1e293b;
+    }
   `);
 
-  /******************************************************************
-   * UI
-   ******************************************************************/
   const root = document.createElement('div');
   root.id = APP_ID;
   root.innerHTML = `
     <div class="hdr">
-      <span>Google Voice Batch Follow-Up</span>
+      <span>Google Voice Sidebar Assistant</span>
       <button id="gvBatchClose" title="Minimize">×</button>
     </div>
     <div class="body">
@@ -183,17 +172,18 @@
       </div>
 
       <div class="row">
-        <button id="gvBatchPreviewBtn">Preview</button>
-        <button id="gvBatchStart" class="primary">Start Sending</button>
-        <button id="gvBatchStop" class="danger">Stop</button>
+        <button id="gvBatchLoad" class="primary">Load Pairs</button>
+        <button id="gvBatchNumber">Number</button>
+        <button id="gvBatchText">Text</button>
+        <button id="gvBatchNext">Next</button>
         <button id="gvBatchSave">Save Draft</button>
         <button id="gvBatchClear">Clear</button>
       </div>
 
-      <div class="tiny">Messages are sent one by one through the Google Voice web UI.</div>
+      <div class="tiny">No auto-sending. Use the helper buttons to copy and step through each name + number pair.</div>
 
-      <div class="status" id="gvBatchStatus">Ready.</div>
-      <div class="preview" id="gvBatchPreview">(preview will appear here)</div>
+      <div class="pair" id="gvBatchStatus">No pair loaded.</div>
+      <div class="preview" id="gvBatchPreview">(queue preview will appear here)</div>
     </div>
   `;
   (document.body || document.documentElement).appendChild(root);
@@ -201,15 +191,9 @@
   const $phones = root.querySelector('#gvBatchPhones');
   const $names = root.querySelector('#gvBatchNames');
   const $message = root.querySelector('#gvBatchMessage');
-  const $status = root.querySelector('#gvBatchStatus');
+  const $pair = root.querySelector('#gvBatchStatus');
   const $preview = root.querySelector('#gvBatchPreview');
-  const $start = root.querySelector('#gvBatchStart');
-  const $stop = root.querySelector('#gvBatchStop');
   const $close = root.querySelector('#gvBatchClose');
-
-  function setStatus(msg) {
-    $status.textContent = String(msg || '');
-  }
 
   function saveState() {
     const state = {
@@ -229,122 +213,6 @@
       $names.value = state.names || '';
       $message.value = state.message || '';
     } catch (_) {}
-  }
-
-  loadState();
-
-  $close.addEventListener('click', () => {
-    const collapsed = root.classList.toggle('collapsed');
-
-    if (collapsed) {
-      $close.textContent = '+';
-      $close.title = 'Restore';
-      setStatus('Minimized. Click + to reopen.');
-    } else {
-      $close.textContent = '×';
-      $close.title = 'Minimize';
-    }
-  });
-
-  root.querySelector('#gvBatchSave').addEventListener('click', () => {
-    saveState();
-    setStatus('Draft saved.');
-  });
-
-  root.querySelector('#gvBatchClear').addEventListener('click', () => {
-    $phones.value = '';
-    $names.value = '';
-    $message.value = '';
-    saveState();
-    $preview.textContent = '(preview will appear here)';
-    setStatus('Cleared.');
-  });
-
-  root.querySelector('#gvBatchPreviewBtn').addEventListener('click', () => {
-    try {
-      const batch = buildBatch_();
-      renderPreview_(batch);
-      setStatus(`Preview ready. ${batch.length} message(s).`);
-    } catch (err) {
-      setStatus(`Preview error: ${String(err.message || err)}`);
-    }
-  });
-
-  $stop.addEventListener('click', () => {
-    stopRequested = true;
-    setStatus('Stop requested. The current send will finish, then the batch will stop.');
-  });
-
-  $start.addEventListener('click', async () => {
-    if (isRunning) return;
-
-    try {
-      saveState();
-      const batch = buildBatch_();
-      renderPreview_(batch);
-
-      const confirmed = confirm(
-        `Send ${batch.length} message(s) through Google Voice now?\n\n` +
-        `They will be sent one by one in the current browser tab.`
-      );
-      if (!confirmed) return;
-
-      stopRequested = false;
-      isRunning = true;
-      updateButtonState_(true);
-
-      await runBatch_(batch);
-
-      if (stopRequested) {
-        setStatus('Stopped.');
-      } else {
-        setStatus(`Done. Sent ${batch.length} message(s).`);
-      }
-    } catch (err) {
-      console.error(err);
-      setStatus(`Error: ${String(err.message || err)}`);
-    } finally {
-      isRunning = false;
-      updateButtonState_(false);
-    }
-  });
-
-  function updateButtonState_(running) {
-    $start.disabled = running;
-  }
-
-  /******************************************************************
-   * Batch parsing
-   ******************************************************************/
-  function buildBatch_() {
-    const phones = parseLines_($phones.value);
-    const names = parseLines_($names.value);
-    const baseMessage = String($message.value || '').trim();
-
-    if (!phones.length) throw new Error('Enter at least one phone number.');
-    if (!baseMessage) throw new Error('Enter a message body.');
-
-    const batch = phones.map((phone, idx) => {
-      const rawName = names[idx] || '';
-      const cleanName = normalizeName_(rawName);
-      const digits = normalizePhone_(phone);
-
-      return {
-        index: idx + 1,
-        phoneRaw: phone,
-        phoneDigits: digits,
-        phoneDisplay: formatPhone_(digits) || phone.trim(),
-        name: cleanName,
-        message: composeMessage_(cleanName, baseMessage)
-      };
-    });
-
-    const bad = batch.filter(x => !x.phoneDigits);
-    if (bad.length) {
-      throw new Error(`These phone numbers could not be parsed: ${bad.map(x => x.phoneRaw).join(', ')}`);
-    }
-
-    return batch;
   }
 
   function parseLines_(text) {
@@ -370,649 +238,204 @@
     return String(name || '').trim();
   }
 
+  function firstName_(name) {
+    const trimmed = normalizeName_(name);
+    if (!trimmed) return '';
+    return trimmed.split(/\s+/)[0];
+  }
+
   function composeMessage_(name, baseMessage) {
     const body = String(baseMessage || '').trim();
-    if (!name) return body;
-    return `Hello ${name}, ${body}`;
+    const first = firstName_(name);
+    if (!body) return first ? `Hi ${first},` : 'Hi,';
+    return first ? `Hi ${first}, ${body}` : `Hi, ${body}`;
   }
 
-function clickElementLikeUser_(el) {
-  if (!el) return;
+  function buildQueue_() {
+    const phones = parseLines_($phones.value);
+    const names = parseLines_($names.value);
 
-  try { el.focus(); } catch (_) {}
+    if (!phones.length) throw new Error('Enter at least one phone number.');
 
-  ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(type => {
-    dispatchMouseEvent_(el, type);
-  });
-}
+    const parsed = phones.map((phone, idx) => {
+      const digits = normalizePhone_(phone);
+      return {
+        index: idx + 1,
+        phoneRaw: phone,
+        phoneDigits: digits,
+        phoneDisplay: formatPhone_(digits) || phone.trim(),
+        name: normalizeName_(names[idx] || '')
+      };
+    });
 
-function dispatchMouseEvent_(target, type, extraInit = {}) {
-  if (!target) return;
+    const bad = parsed.filter(x => !x.phoneDigits);
+    if (bad.length) {
+      throw new Error(`These phone numbers could not be parsed: ${bad.map(x => x.phoneRaw).join(', ')}`);
+    }
 
-  const init = {
-    bubbles: true,
-    cancelable: true,
-    ...extraInit
-  };
+    return parsed;
+  }
 
-  const view = target.ownerDocument && target.ownerDocument.defaultView;
-  if (view && typeof view === 'object') {
-    try {
-      target.dispatchEvent(new MouseEvent(type, { ...init, view }));
+  function renderFocusedPair_() {
+    if (!focusedPair) {
+      $pair.textContent = 'No pair loaded.';
       return;
-    } catch (_) {}
+    }
+
+    const safeName = focusedPair.name || '(no name provided)';
+    const safePhone = focusedPair.phoneDisplay || focusedPair.phoneRaw || '(no number)';
+
+    $pair.innerHTML = `
+      <div class="pair-name">${escapeHtml_(safeName)}</div>
+      <div class="pair-phone">${escapeHtml_(safePhone)}</div>
+      <div class="tiny" style="margin-top:6px;">${queue.length} pair(s) remaining in queue.</div>
+    `;
   }
 
-  target.dispatchEvent(new MouseEvent(type, init));
-}
-
-function waitForOptional_(fn, timeoutMs = 2000, intervalMs = 100) {
-  return new Promise(resolve => {
-    const start = Date.now();
-
-    const tick = () => {
-      try {
-        const value = fn();
-        if (value) return resolve(value);
-
-        if (Date.now() - start >= timeoutMs) {
-          return resolve(null);
-        }
-
-        setTimeout(tick, intervalMs);
-      } catch (_) {
-        return resolve(null);
-      }
-    };
-
-    tick();
-  });
-}
-  function renderPreview_(batch) {
-    if (!batch.length) {
-      $preview.textContent = '(preview will appear here)';
+  function renderPreview_() {
+    if (!queue.length) {
+      $preview.textContent = '(queue preview will appear here)';
       return;
     }
 
     const lines = [];
-    const show = batch.slice(0, 3);
+    const show = queue.slice(0, 5);
 
     show.forEach(item => {
-      lines.push(`[${item.index}] ${item.phoneDisplay}`);
-      lines.push(item.message);
-      lines.push('');
+      lines.push(`[${item.index}] ${item.name || '(no name)'} -> ${item.phoneDisplay}`);
     });
 
-    if (batch.length > show.length) {
-      lines.push(`...and ${batch.length - show.length} more.`);
+    if (queue.length > show.length) {
+      lines.push(`...and ${queue.length - show.length} more.`);
     }
 
     $preview.textContent = lines.join('\n');
   }
 
-  /******************************************************************
-   * Google Voice automation
-   ******************************************************************/
-  async function runBatch_(batch) {
-    for (let i = 0; i < batch.length; i++) {
-      if (stopRequested) break;
-
-      const item = batch[i];
-      setStatus(`Sending ${i + 1}/${batch.length} to ${item.phoneDisplay} ...`);
-
-      await ensureMessagesTab_();
-      await openNewMessageComposer_();
-      await fillRecipient_(item.phoneDigits);
-      await waitMs_(AFTER_RECIPIENT_DELAY_MS);
-      await fillMessageBox_(item.message);
-      await waitMs_(AFTER_COMPOSE_DELAY_MS);
-      await clickSend_(item.phoneDisplay);
-
-      setStatus(`Sent ${i + 1}/${batch.length} to ${item.phoneDisplay}`);
-      await waitMs_(SEND_DELAY_MS);
-    }
+  function removeFirstTextareaLine_(textarea) {
+    const all = String(textarea.value || '').split(/\r?\n/);
+    while (all.length && !all[0].trim()) all.shift();
+    if (all.length) all.shift();
+    textarea.value = all.join('\n');
   }
 
-  async function ensureMessagesTab_() {
-    if (/\/messages\b/i.test(location.pathname)) return;
+  async function copyToClipboard_(text) {
+    const value = String(text || '');
+    if (!value) throw new Error('Nothing to copy.');
 
-    const link = findByTextOrAria_(
-      [
-        'a[aria-label*="Messages"]',
-        'div[role="link"][aria-label*="Messages"]',
-        'a[href*="/messages"]'
-      ],
-      /messages/i
-    );
-
-    if (!link) {
-      throw new Error('Could not find the Messages tab in Google Voice.');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(value);
+      return;
     }
 
-    link.click();
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
 
-    await waitFor_(
-      () => /\/messages\b/i.test(location.pathname),
-      WAIT_TIMEOUT_MS,
-      200,
-      'Messages tab did not load.'
-    );
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+
+    if (!ok) throw new Error('Clipboard copy failed in this browser.');
   }
 
-  async function openNewMessageComposer_() {
-    const btn = findByTextOrAria_(
-      [
-        'button[aria-label*="Send new message"]',
-        'div[role="button"][aria-label*="Send new message"]',
-        'button[aria-label*="Send a message"]',
-        'div[role="button"][aria-label*="Send a message"]',
-        'button',
-        'div[role="button"]'
-      ],
-      /send (new|a) message/i
-    );
+  function escapeHtml_(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
 
-    if (!btn) {
-      throw new Error('Could not find the "Send new message" button.');
+  function loadQueue_() {
+    queue = buildQueue_();
+    focusedPair = queue[0] || null;
+    renderFocusedPair_();
+    renderPreview_();
+  }
+
+  loadState();
+
+  $close.addEventListener('click', () => {
+    const collapsed = root.classList.toggle('collapsed');
+
+    if (collapsed) {
+      $close.textContent = '+';
+      $close.title = 'Restore';
+    } else {
+      $close.textContent = '×';
+      $close.title = 'Minimize';
     }
-
-    btn.click();
-
-    await waitFor_(
-      findRecipientInput_,
-      WAIT_TIMEOUT_MS,
-      200,
-      'Recipient input did not appear.'
-    );
-  }
-
-  function findRecipientInput_() {
-    const pickers = Array.from(document.querySelectorAll('gv-message-party-picker'));
-
-    for (const picker of pickers) {
-      const label = picker.querySelector('mat-label.label');
-      const input =
-        picker.querySelector('input[placeholder="Type a name or phone number"]') ||
-        picker.querySelector('input[placeholder="Add recipients"]') ||
-        picker.querySelector('input.mat-mdc-chip-input');
-
-      if (!input || !isVisible_(input)) continue;
-      if (!label) continue;
-
-      const labelText = (label.textContent || '').trim().toLowerCase();
-      if (labelText === 'to') {
-        return input;
-      }
-    }
-
-    return null;
-  }
-
-  async function fillRecipient_(phoneDigits) {
-  const input = await waitFor_(
-    findRecipientInput_,
-    WAIT_TIMEOUT_MS,
-    200,
-    'Recipient input did not appear.'
-  );
-
-  if (!input) throw new Error('Recipient input did not appear.');
-  const picker = input.closest('gv-message-party-picker');
-
-  focusAndClear_(input);
-  insertText_(input, formatPhone_(phoneDigits) || phoneDigits);
-  triggerInputEvents_(input);
-
-  // Voice can show either:
-  // 1) a required "Send to ..." chip
-  // 2) suggested/saved contact rows that don't use .send-to-button
-  // Accept whichever appears and then confirm recipient is committed.
-  await waitForOptional_(
-    () => findSendToChip_() || findFirstRecipientOption_() || findRecipientOverlay_() || recipientWasAccepted_(picker, phoneDigits, input),
-    2500,
-    100
-  );
-
-  const sendToChip = findSendToChip_();
-  if (sendToChip) {
-    clickElementLikeUser_(sendToChip);
-  } else {
-    const option = findFirstRecipientOption_();
-    if (option) clickElementLikeUser_(option);
-  }
-
-  // Enter helps commit the active recipient in the chips input.
-  fireEnterKey_(input);
-
-  await waitFor_(
-    () => recipientWasAccepted_(picker, phoneDigits, input),
-    WAIT_TIMEOUT_MS,
-    100,
-    `Recipient was not accepted for ${formatPhone_(phoneDigits) || phoneDigits}.`
-  );
-
-  // After acceptance, close any leftover suggestion panel without changing chips.
-  await dismissRecipientSuggestions_(input);
-
-  if (!recipientWasAccepted_(picker, phoneDigits, input)) {
-    throw new Error(`Recipient was not accepted for ${formatPhone_(phoneDigits) || phoneDigits}.`);
-  }
-}
-
-function clickSendToChip_() {
-  const chip = findSendToChip_();
-  if (!chip) return false;
-
-  try {
-    chip.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  } catch (_) {}
-
-  try { chip.focus(); } catch (_) {}
-
-  // Native click first
-  try { chip.click(); } catch (_) {}
-
-  // Then synthetic mouse events to make it stick
-  ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(type => {
-    dispatchMouseEvent_(chip, type);
   });
 
-  return true;
-}
-  function getRecipientChips_(rootEl) {
-    const root = rootEl || document;
-    return Array.from(
-      root.querySelectorAll(
-        [
-          'gv-message-party-picker mat-chip-row',
-          'gv-message-party-picker mat-chip',
-          'gv-message-party-picker .mat-mdc-chip',
-          'gv-message-party-picker .chip-row',
-          'gv-message-party-picker [role="listitem"]'
-        ].join(', ')
-      )
-    ).filter(isVisible_);
-  }
+  root.querySelector('#gvBatchSave').addEventListener('click', () => {
+    saveState();
+    renderFocusedPair_();
+  });
 
-  function findRecipientChip_(phoneDigits) {
-    const chips = getRecipientChips_();
+  root.querySelector('#gvBatchClear').addEventListener('click', () => {
+    $phones.value = '';
+    $names.value = '';
+    $message.value = '';
+    queue = [];
+    focusedPair = null;
+    saveState();
+    renderFocusedPair_();
+    renderPreview_();
+  });
 
-    if (!chips.length) return null;
-
-    const normalized = String(phoneDigits || '').replace(/\D/g, '');
-    if (normalized) {
-      for (const chip of chips) {
-        const textDigits = (chip.textContent || '').replace(/\D/g, '');
-        if (textDigits.includes(normalized)) {
-          return chip;
-        }
-      }
-    }
-
-    return chips[0];
-  }
-
-  function getRecipientCount_(pickerEl) {
-    const picker = pickerEl || document.querySelector('gv-message-party-picker');
-    if (!picker) return 0;
-
-    const srText = Array.from(picker.querySelectorAll('.cdk-visually-hidden'))
-      .map(el => (el.textContent || '').trim())
-      .find(t => /recipients?\s+added/i.test(t));
-
-    if (!srText) return 0;
-
-    const m = srText.match(/(\d+)\s+recipients?\s+added/i);
-    return m ? Number(m[1]) : 0;
-  }
-
-  function recipientWasAccepted_(pickerEl, phoneDigits, inputEl) {
-    const picker = pickerEl
-      || (inputEl && inputEl.closest && inputEl.closest('gv-message-party-picker'))
-      || document.querySelector('gv-message-party-picker');
-    if (!picker) return false;
-
-    const count = getRecipientCount_(picker);
-    if (count > 0) return true;
-
-    const input = inputEl || picker.querySelector('input.mat-mdc-chip-input');
-    if (!input) return false;
-
-    const placeholder = String(input.getAttribute('placeholder') || '').trim().toLowerCase();
-    if (placeholder === 'add recipients') return true;
-
-    const chips = getRecipientChips_(picker);
-    if (chips.length > 0) return true;
-
-    const normalized = String(phoneDigits || '').replace(/\D/g, '');
-    if (normalized && findRecipientChipInPicker_(picker, normalized)) return true;
-
-    const inputValueDigits = String(input.value || '').replace(/\D/g, '');
-    if (inputValueDigits && normalized && inputValueDigits !== normalized) return true;
-
-    // For some saved contacts, Voice commits to a token and clears the input
-    // without updating the SR "recipients added" text immediately.
-    return !input.value && document.activeElement !== input;
-  }
-
-  function findRecipientChipInPicker_(picker, normalizedDigits) {
-    const chips = getRecipientChips_(picker);
-    for (const chip of chips) {
-      const textDigits = (chip.textContent || '').replace(/\D/g, '');
-      if (textDigits.includes(normalizedDigits)) return chip;
-    }
-    return null;
-  }
-
-  function findRecipientOverlay_() {
-  const overlays = Array.from(
-    document.querySelectorAll('.cdk-overlay-pane')
-  ).filter(isVisible_);
-
-  for (const overlay of overlays) {
-    const hasSendToChip = overlay.querySelector('gv-contact-list section#contact-list .send-to-button');
-    const hasContactList = overlay.querySelector('gv-contact-list');
-    const hasListbox = overlay.querySelector('[role="listbox"], [role="option"], mat-option, .mat-mdc-option');
-    if (hasSendToChip || hasContactList || hasListbox) {
-      return overlay;
-    }
-  }
-
-  return null;
-}
-
-function findSendToChip_() {
-  const overlay = findRecipientOverlay_();
-  if (!overlay) return null;
-
-  const chip = overlay.querySelector('gv-contact-list section#contact-list .send-to-button');
-  return chip && isVisible_(chip) ? chip : null;
-}
-
-function findFirstRecipientOption_() {
-  const overlay = findRecipientOverlay_();
-  if (!overlay) return null;
-
-  const selectors = [
-    'mat-option',
-    '.mat-mdc-option',
-    '[role="option"]',
-    '[role="listbox"] mat-option',
-    '[role="listbox"] [role="option"]'
-  ];
-
-  for (const sel of selectors) {
-    const option = Array.from(overlay.querySelectorAll(sel)).find(isVisible_);
-    if (option) return option;
-  }
-
-  return null;
-}
-  async function dismissRecipientSuggestions_(inputEl) {
-    let overlay = findRecipientOverlay_();
-    if (!overlay) return;
-
+  root.querySelector('#gvBatchLoad').addEventListener('click', () => {
     try {
-      overlay.focus();
-    } catch (_) {}
-
-    fireEscapeKey_(overlay);
-    await waitMs_(200);
-
-    overlay = findRecipientOverlay_();
-    if (!overlay) return;
-
-    clickBelowOverlay_(overlay);
-    await waitMs_(250);
-
-    overlay = findRecipientOverlay_();
-    if (!overlay) return;
-
-    const messageBox = findMessageBox_();
-    if (messageBox) {
-      try {
-        messageBox.click();
-      } catch (_) {}
-      await waitMs_(200);
+      saveState();
+      loadQueue_();
+    } catch (err) {
+      $pair.textContent = `Load error: ${String(err.message || err)}`;
     }
+  });
 
-    overlay = findRecipientOverlay_();
-    if (!overlay) return;
-
-    fireTabKey_(inputEl || document.activeElement || document.body);
-    await waitMs_(200);
-  }
-
-  function clickBelowOverlay_(overlayEl) {
-    const rect = overlayEl.getBoundingClientRect();
-    const pad = 20;
-    const candidates = [
-      { x: rect.left - 16, y: rect.top - 16 },
-      { x: rect.right + 16, y: rect.top - 16 },
-      { x: rect.left - 16, y: rect.bottom + 16 },
-      { x: rect.right + 16, y: rect.bottom + 16 },
-      { x: window.innerWidth / 2, y: rect.bottom + 24 },
-      { x: pad, y: pad }
-    ];
-
-    let x = pad;
-    let y = pad;
-    for (const point of candidates) {
-      const cx = Math.max(pad, Math.min(window.innerWidth - pad, Math.round(point.x)));
-      const cy = Math.max(pad, Math.min(window.innerHeight - pad, Math.round(point.y)));
-      const outsideHoriz = cx < rect.left || cx > rect.right;
-      const outsideVert = cy < rect.top || cy > rect.bottom;
-      if (outsideHoriz || outsideVert) {
-        x = cx;
-        y = cy;
-        break;
-      }
+  root.querySelector('#gvBatchNumber').addEventListener('click', async () => {
+    try {
+      if (!focusedPair) throw new Error('Load at least one pair first.');
+      await copyToClipboard_(focusedPair.phoneDisplay || focusedPair.phoneRaw);
+    } catch (err) {
+      $pair.textContent = `Copy error: ${String(err.message || err)}`;
     }
+  });
 
-    const target = document.elementFromPoint(x, y) || document.body;
-
-    ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(type => {
-      dispatchMouseEvent_(target, type, {
-        clientX: x,
-        clientY: y
-      });
-    });
-  }
-
-  function findMessageBox_() {
-    const selectors = [
-      'gv-message-entry textarea[placeholder="Type a message"]',
-      'gv-message-entry textarea[aria-label*="Message"]',
-      'gv-conversation-compose textarea[aria-label*="Message"]',
-      'gv-conversation-compose textarea',
-      'textarea[placeholder="Type a message"]',
-      'textarea[aria-label*="Message"]',
-      '[contenteditable="true"][aria-label*="Message"]',
-      '[contenteditable="true"][role="textbox"]'
-    ];
-
-    for (const sel of selectors) {
-      const els = Array.from(document.querySelectorAll(sel)).filter(isVisible_);
-      if (!els.length) continue;
-
-      els.sort((a, b) => {
-        const ra = a.getBoundingClientRect();
-        const rb = b.getBoundingClientRect();
-        return rb.top - ra.top;
-      });
-
-      return els[0];
+  root.querySelector('#gvBatchText').addEventListener('click', async () => {
+    try {
+      if (!focusedPair) throw new Error('Load at least one pair first.');
+      const message = composeMessage_(focusedPair.name, $message.value || '');
+      await copyToClipboard_(message);
+    } catch (err) {
+      $pair.textContent = `Copy error: ${String(err.message || err)}`;
     }
+  });
 
-    return null;
-  }
-
-  async function fillMessageBox_(message) {
-    await dismissRecipientSuggestions_(document.activeElement || document.body);
-
-    const box = await waitFor_(
-      findMessageBox_,
-      WAIT_TIMEOUT_MS,
-      200,
-      'Message box did not appear.'
-    );
-
-    if (!box) throw new Error('Could not find the message box.');
-
-    if (typeof box.click === 'function') {
-      box.click();
-      await waitMs_(150);
-    }
-
-    focusAndClear_(box);
-    insertText_(box, message);
-    triggerInputEvents_(box);
-  }
-
-  async function clickSend_(phoneDisplay) {
-    const sendBtn = await waitFor_(() => {
-      const selectors = [
-        'button.send-button[aria-label="Send message"]',
-        'button[aria-label="Send message"]',
-        '.button-container button.send-button',
-        '.button-container button',
-        'button.send-button',
-        'button[mattooltip="Send message"]'
-      ];
-
-      for (const sel of selectors) {
-        const els = Array.from(document.querySelectorAll(sel)).filter(isVisible_);
-        for (const el of els) {
-          const aria = (el.getAttribute('aria-label') || '').trim().toLowerCase();
-          const tooltip = (el.getAttribute('mattooltip') || '').trim().toLowerCase();
-          const cls = String(el.className || '');
-
-          if (
-            aria === 'send message' ||
-            tooltip === 'send message' ||
-            cls.includes('send-button')
-          ) {
-            return el;
-          }
-        }
-      }
-
-      return null;
-    }, WAIT_TIMEOUT_MS, 200, `Send button did not appear for ${phoneDisplay}.`);
-
-    if (!sendBtn) {
-      throw new Error(`Could not find the Send message button for ${phoneDisplay}.`);
-    }
-
-    sendBtn.click();
-    await waitMs_(700);
-  }
-
-  /******************************************************************
-   * DOM helpers
-   ******************************************************************/
-  function findByTextOrAria_(selectors, regex) {
-    for (const sel of selectors) {
-      const els = Array.from(document.querySelectorAll(sel)).filter(isVisible_);
-      for (const el of els) {
-        const text = `${el.textContent || ''} ${el.getAttribute('aria-label') || ''}`.trim();
-        if (regex.test(text)) return el;
-      }
-    }
-    return null;
-  }
-
-  function isVisible_(el) {
-    if (!el) return false;
-    const rect = el.getBoundingClientRect();
-    const style = getComputedStyle(el);
-    return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
-  }
-
-  function focusAndClear_(el) {
-    el.focus();
-
-    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-      el.value = '';
+  root.querySelector('#gvBatchNext').addEventListener('click', () => {
+    if (!queue.length) {
+      focusedPair = null;
+      renderFocusedPair_();
       return;
     }
 
-    if (el.isContentEditable) {
-      el.textContent = '';
-    }
-  }
+    queue.shift();
+    removeFirstTextareaLine_($phones);
+    removeFirstTextareaLine_($names);
+    focusedPair = queue[0] || null;
+    saveState();
+    renderFocusedPair_();
+    renderPreview_();
+  });
 
-  function insertText_(el, text) {
-    const value = String(text || '');
-
-    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-      el.value = value;
-      return;
-    }
-
-    if (el.isContentEditable) {
-      el.focus();
-      document.execCommand('selectAll', false, null);
-      document.execCommand('insertText', false, value);
-      if (!el.textContent || el.textContent.trim() !== value.trim()) {
-        el.textContent = value;
-      }
-    }
-  }
-
-  function triggerInputEvents_(el) {
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-  }
-
-  function fireEnterKey_(el) {
-    const target = el || document.activeElement || document.body;
-    const down = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true });
-    const up = new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true });
-    target.dispatchEvent(down);
-    target.dispatchEvent(up);
-  }
-
-  function fireEscapeKey_(el) {
-    const target = el || document.activeElement || document.body;
-    const down = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true });
-    const up = new KeyboardEvent('keyup', { key: 'Escape', code: 'Escape', bubbles: true });
-    target.dispatchEvent(down);
-    target.dispatchEvent(up);
-  }
-
-  function fireTabKey_(el) {
-    const target = el || document.activeElement || document.body;
-    const down = new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', bubbles: true });
-    const up = new KeyboardEvent('keyup', { key: 'Tab', code: 'Tab', bubbles: true });
-    target.dispatchEvent(down);
-    target.dispatchEvent(up);
-  }
-
-  function waitMs_(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  function waitFor_(fn, timeoutMs = WAIT_TIMEOUT_MS, intervalMs = 200, errorMessage = 'Timed out waiting for Google Voice UI element.') {
-    return new Promise((resolve, reject) => {
-      const start = Date.now();
-
-      const tick = () => {
-        try {
-          const value = fn();
-          if (value) return resolve(value);
-
-          if (Date.now() - start >= timeoutMs) {
-            return reject(new Error(errorMessage));
-          }
-
-          setTimeout(tick, intervalMs);
-        } catch (err) {
-          reject(err);
-        }
-      };
-
-      tick();
-    });
+  try {
+    loadQueue_();
+  } catch (_) {
+    renderFocusedPair_();
+    renderPreview_();
   }
 })();
