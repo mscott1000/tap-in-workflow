@@ -1,0 +1,1430 @@
+// ==UserScript==
+// @name         ICBiNCn Batch Case Number Search
+// @namespace    http://tampermonkey.net/
+// @version      2026-02-12
+// @description  Batch paste rows -> search Case.net (Criminal) -> filter by YOB, location (St. Louis County), charge level, and recall-window docket hit -> output Name/Case#/ChargeType/Class for copy.
+// @author       Mason Scott
+// @match        https://www.courts.mo.gov/casenet/*
+// @match        https://www.courts.mo.gov/cases/*
+// @match        https://www.courts.mo.gov/cnet/*
+// @run-at       document-idle
+// @grant        GM_addStyle
+// @grant        GM_setClipboard
+// @grant        GM_getValue
+// @grant        GM_setValue
+// ==/UserScript==
+
+(function () {
+  'use strict';
+
+  /************************************************************
+   * Storage keys
+   ************************************************************/
+  const KEY_LOG = 'tic_batch_log_v1';
+  const KEY_STOP = 'tic_batch_stop_v1';
+  const KEY_DEBUG = 'tic_batch_debug_v1';
+  const KEY_UI_DRAFT = 'tic_batch_ui_draft_v1';
+  const KEY_STATE = 'tic_batch_state_v1'
+  const KEY_LAST_HTML = 'tic_batch_last_html_v1';
+  const KEY_NET_STATS = 'tic_batch_net_stats_v1';
+const KEY_RUN = 'tic_batch_run_v1';
+const KEY_STATUS = 'tic_batch_status_v1';
+
+  const DEBUG_MAX = 220;
+
+  // Stability knobs
+  const DEFAULT_CONCURRENCY = 4;
+  const RESULTS_READY_TIMEOUT_MS = 20000;
+  const RESULTS_READY_POLL_MS = 250;
+
+  // Filtering constants
+  const REQUIRED_LOCATION = 'st. louis county';
+  const RECALL_WINDOW_BEFORE_DAYS = 31;
+  const RECALL_WINDOW_AFTER_DAYS = 183;
+
+  /************************************************************
+   * Helpers (storage / utils)
+   ************************************************************/
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+  const normLower = (s) => norm(s).toLowerCase();
+
+function normLoc(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+  function loadJson(key, fallback) {
+    try {
+      const raw = GM_getValue(key, JSON.stringify(fallback));
+      const parsed = JSON.parse(raw);
+      return parsed === undefined || parsed === null ? fallback : parsed;
+    } catch {
+      return fallback;
+    }
+  }
+  function saveJson(key, val) { GM_setValue(key, JSON.stringify(val)); }
+
+  const loadLog = () => loadJson(KEY_LOG, []);
+  const saveLog = (arr) => saveJson(KEY_LOG, Array.isArray(arr) ? arr : []);
+
+  const setRun = (v) => GM_setValue(KEY_RUN, v === true);
+  const isRun = () => GM_getValue(KEY_RUN, false) === true;
+
+  const setStop = (v) => GM_setValue(KEY_STOP, v === true);
+  const isStop = () => GM_getValue(KEY_STOP, false) === true;
+
+  const setStatus = (s) => GM_setValue(KEY_STATUS, String(s || ''));
+  const getStatus = () => String(GM_getValue(KEY_STATUS, ''));
+
+  function loadDebug() { return loadJson(KEY_DEBUG, []); }
+  function saveDebug(a) { saveJson(KEY_DEBUG, Array.isArray(a) ? a.slice(-DEBUG_MAX) : []); }
+
+  function dbg(event, data = {}) {
+    const row = { ts: new Date().toISOString(), event: String(event || ''), url: location.href, ...data };
+    const cur = loadDebug();
+    cur.push(row);
+    saveDebug(cur);
+  }
+
+  function saveLastHtml(obj) { saveJson(KEY_LAST_HTML, obj || null); }
+  function loadLastHtml() { return loadJson(KEY_LAST_HTML, null); }
+
+  function bumpNetStat(path, field) {
+    const st = loadJson(KEY_NET_STATS, { byPath: {} });
+    st.byPath[path] = st.byPath[path] || { html: 0, json: 0, httpErr: 0 };
+    st.byPath[path][field] = (st.byPath[path][field] || 0) + 1;
+    saveJson(KEY_NET_STATS, st);
+  }
+
+  function clearRunArtifacts() {
+    saveLastHtml(null);
+    saveJson(KEY_NET_STATS, { byPath: {} });
+  }
+
+  function looksLikeHtml(txt) { return /^\s*</.test(String(txt || '')); }
+  function looksLikeJson(txt) { return /^\s*[{[]/.test(String(txt || '')); }
+
+  function extractHtmlTitle(html) {
+    const m = String(html || '').match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    return norm(m ? m[1] : '');
+  }
+
+  function htmlSignatures(html) {
+    const t = String(html || '').toLowerCase();
+    return {
+      hasLogin: t.includes('login') && (t.includes('password') || t.includes('user')),
+      hasHelpDesk: t.includes('osca') && t.includes('help desk'),
+      hasErrorRetrieving: (t.includes('error retrieving') || t.includes('there was an error retrieving')),
+      hasCaptcha: t.includes('captcha'),
+      hasAccessDenied: t.includes('access denied') || t.includes('not authorized'),
+    };
+  }
+
+  function openLastHtmlInNewTab() {
+    const obj = loadLastHtml();
+    if (!obj?.html) { uiStatus('No captured HTML yet.'); return; }
+    const blob = new Blob([obj.html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
+  /************************************************************
+   * Batch parsing
+   * Expected paste: TSV rows with columns:
+   * [0]=serviceDate  [1]=first  [2]=last  [3]=dob  ... [6]=location [7]=chargeLevel
+   ************************************************************/
+  function safeSplitTsvLine(line) {
+    // we assume this is a Google Sheets copy: tab-delimited.
+    return String(line || '').split('\t').map((x) => norm(x));
+  }
+
+  function parseMmDdYyyy(s) {
+    const t = norm(s);
+    const m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (!m) return null;
+    const mm = Number(m[1]), dd = Number(m[2]), yy = Number(m[3]);
+    if (!mm || !dd || !yy) return null;
+    const dt = new Date(yy, mm - 1, dd);
+    // validate no rollover
+    if (dt.getFullYear() !== yy || (dt.getMonth() + 1) !== mm || dt.getDate() !== dd) return null;
+    dt.setHours(0,0,0,0);
+    return dt;
+  }
+
+  function fmtMmDdYyyy(dt) {
+    if (!(dt instanceof Date)) return '';
+    const mm = String(dt.getMonth() + 1).padStart(2,'0');
+    const dd = String(dt.getDate()).padStart(2,'0');
+    const yy = String(dt.getFullYear());
+    return `${mm}/${dd}/${yy}`;
+  }
+
+  function addDays(dt, days) {
+    const d = new Date(dt.getTime());
+    d.setDate(d.getDate() + Number(days || 0));
+    d.setHours(0,0,0,0);
+    return d;
+  }
+
+  function extractYearFromDob(dobStr) {
+    // dob is like 6/26/1986 -> we only need 1986
+    const dt = parseMmDdYyyy(dobStr);
+    if (!dt) {
+      // last-ditch: any 4-digit year
+      const m = String(dobStr || '').match(/\b(19\d{2}|20\d{2})\b/);
+      return m ? m[1] : '';
+    }
+    return String(dt.getFullYear());
+  }
+
+  function normalizeChargeLevel(s) {
+    const t = normLower(s);
+    if (t.includes('felony')) return 'felony';
+    if (t.includes('misdemeanor')) return 'misdemeanor';
+    return '';
+  }
+
+  function parseBatchTextarea(text) {
+    const rows = [];
+    const lines = String(text || '').split(/\r?\n/).map((l) => l.trimEnd()).filter((l) => norm(l));
+    for (let i = 0; i < lines.length; i++) {
+      const parts = safeSplitTsvLine(lines[i]);
+      if (parts.length < 4) continue;
+
+      const serviceDateStr = parts[0] || '';
+      const first = parts[1] || '';
+      const last = parts[2] || '';
+      const dobStr = parts[3] || '';
+      const locStr = parts[6] || '';
+      const chargeLvlStr = parts[7] || '';
+
+      const serviceDt = parseMmDdYyyy(serviceDateStr);
+      const yob = extractYearFromDob(dobStr);
+      const chargeLevel = normalizeChargeLevel(chargeLvlStr);
+
+      rows.push({
+        rowIndex: i + 1,
+        serviceDateStr,
+        serviceDt: serviceDt ? serviceDt.toISOString() : '',
+        first, last,
+        dobStr,
+        yob,
+        requiredLocationRaw: locStr || 'St. Louis County',
+        requiredLocationNorm: normLower(locStr || 'St. Louis County'),
+        chargeLevel,
+        rawLine: lines[i],
+      });
+    }
+    return rows;
+  }
+
+  /************************************************************
+   * Year-of-birth matching (reused concept)
+   ************************************************************/
+  function extractYearsFromYobText(yobText) {
+    const t = String(yobText || '');
+    const years = [];
+    const yyyy = t.match(/\b(19\d{2}|20\d{2})\b/g) || [];
+    for (const y of yyyy) years.push(y);
+    const dates = t.match(/\b\d{1,2}\/\d{1,2}\/(19\d{2}|20\d{2})\b/g) || [];
+    for (const d of dates) {
+      const m = d.match(/(19\d{2}|20\d{2})/);
+      if (m) years.push(m[1]);
+    }
+    return Array.from(new Set(years));
+  }
+
+  function yobMatchesExpected(expected4, scrapedText) {
+    const exp = String(expected4 || '').trim();
+    if (!/^\d{4}$/.test(exp)) return { ok: true, reason: 'no_expected_yob' };
+    const years = extractYearsFromYobText(scrapedText);
+    if (!years.length) return { ok: true, reason: 'unknown_keep' };
+    const ok = years.includes(exp);
+    return { ok, years };
+  }
+
+  /************************************************************
+   * Page detection / navigation (reused concept)
+   ************************************************************/
+  function isNameSearchPage() {
+    const hasLast = !!document.querySelector('#lastName')
+      || !!document.querySelector('input[name="lastName"]')
+      || !!document.querySelector('input[name="inputVO.lastName"]')
+      || !!document.querySelector('input[name*="lastName"]');
+
+    const hasSubmit = !!document.querySelector('#findButton')
+      || !!document.querySelector('form#nameSearchModel')
+      || !!document.querySelector('form[name="nameSearchModel"]')
+      || !!document.querySelector('button[type="submit"], input[type="submit"]');
+
+    return hasLast && hasSubmit;
+  }
+
+  function canonicalNameSearchUrl() {
+    return new URL('/casenet/nameSearch.do?newSearch=Y', location.origin).toString();
+  }
+
+  function isNameSearchResultsPage() {
+    return !!document.querySelector('select[name="nameSearchResult_length"]');
+  }
+
+  function isNoMatchesMessagePage() {
+    const text = (document.querySelector('#nameSearchResult')?.innerText
+      || document.body?.innerText
+      || '')
+      .replace(/\s+/g, ' ')
+      .toLowerCase();
+    return text.includes('your query returned no matches');
+  }
+
+  async function waitForResultsReady() {
+    const start = Date.now();
+    while (Date.now() - start < RESULTS_READY_TIMEOUT_MS) {
+      if (isNoMatchesMessagePage()) return { ready: true, noMatches: true };
+      const hasAnyCaseLink = document.querySelector('a[href*="inputVO.caseNumber"]') || document.querySelector('a[href*="caseNumber="]');
+      const hasLen = document.querySelector('select[name="nameSearchResult_length"]');
+      if (hasAnyCaseLink || hasLen) return { ready: true, noMatches: false };
+      await sleep(RESULTS_READY_POLL_MS);
+    }
+    return { ready: false, noMatches: false };
+  }
+
+  function setShowEntriesTo100() {
+    const sel = document.querySelector('select[name="nameSearchResult_length"]');
+    if (!sel) return;
+    sel.value = '100';
+    sel.dispatchEvent(new Event('input', { bubbles: true }));
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function setCaseTypeCriminalOnly() {
+    const sel = document.querySelector('#caseType');
+    if (!sel) return false;
+    const wantValue = 'Criminal';
+    const opt = Array.from(sel.options || []).find((o) => (o.value || '') === wantValue);
+    if (!opt) return false;
+    sel.value = wantValue;
+    sel.dispatchEvent(new Event('input', { bubbles: true }));
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  }
+
+  function setInputIfPresent(selectors, value) {
+    const v = String(value || '');
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (!el) continue;
+      el.focus();
+      el.value = v;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    }
+    return false;
+  }
+
+  function fillNameSearchForm(params) {
+    setInputIfPresent(['#firstName', 'input[name="firstName"]', 'input[name="inputVO.firstName"]', 'input[name*="firstName"]'], params.first);
+    setInputIfPresent(['#lastName', 'input[name="lastName"]', 'input[name="inputVO.lastName"]', 'input[name*="lastName"]'], params.last);
+    // middle omitted on purpose: batch sheet doesn’t reliably provide it.
+    setInputIfPresent(['#birthYear', '#yearOfBirth', '#yob', 'input[name="birthYear"]', 'input[name="yearOfBirth"]', 'input[name="yob"]', 'input[name="inputVO.birthYear"]', 'input[name="inputVO.yearOfBirth"]', 'input[name*="birth"]', 'input[name*="yob"]'], params.yob);
+    setCaseTypeCriminalOnly();
+  }
+
+  function submitNameSearchForm() {
+    const btn = document.querySelector('#findButton')
+      || document.querySelector('input#findButton')
+      || Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"]'))
+        .find((el) => /find|search/i.test(el.value || el.textContent || ''));
+
+    if (btn) { btn.click(); return true; }
+
+    const form = document.querySelector('form#nameSearchModel')
+      || document.querySelector('form[name="nameSearchModel"]')
+      || document.querySelector('#lastName')?.form
+      || null;
+
+    if (form) { form.submit(); return true; }
+    return false;
+  }
+
+  /************************************************************
+   * Case link parsing (reused)
+   ************************************************************/
+  function normalizeUrl(u) {
+    try { const url = new URL(u, location.href); url.hash = ''; return url.toString(); }
+    catch { return String(u || ''); }
+  }
+
+  function parseCaseFromUrl(u) {
+    try {
+      const url = new URL(u, location.href);
+      const sp = url.searchParams;
+      const caseNumber = sp.get('caseNumber') || sp.get('inputVO.caseNumber') || sp.get('ci') || '';
+      const courtId = sp.get('courtId') || sp.get('inputVO.courtId') || sp.get('courtCode') || sp.get('l') || '';
+      const cn = String(caseNumber || '').trim();
+      const ct = String(courtId || '').trim();
+      if (!cn || !ct) return null;
+      const caseKey = `${cn.toUpperCase()}|${ct.toUpperCase()}`;
+      return { caseKey, caseNumber: cn, courtId: ct, url: normalizeUrl(url.toString()) };
+    } catch { return null; }
+  }
+
+  async function harvestAllResultCaseKeys() {
+    const seen = new Set();
+    const out = [];
+
+    const table = document.querySelector('#nameSearchResult');
+    const tbody = table?.querySelector('tbody');
+    const snapshotTbody = () => norm(tbody?.textContent || '');
+
+    const waitForTbodyChange = async (beforeSnap, timeoutMs = 8000) => {
+      const t0 = Date.now();
+      while (Date.now() - t0 < timeoutMs) {
+        await sleep(150);
+        const afterSnap = snapshotTbody();
+        if (afterSnap && afterSnap !== beforeSnap) return true;
+      }
+      return false;
+    };
+
+    const lenSel = document.querySelector('select[name="nameSearchResult_length"]');
+    if (lenSel && lenSel.value !== '100') {
+      const before = snapshotTbody();
+      lenSel.value = '100';
+      lenSel.dispatchEvent(new Event('input', { bubbles: true }));
+      lenSel.dispatchEvent(new Event('change', { bubbles: true }));
+      await waitForTbodyChange(before, 8000);
+      await sleep(150);
+    }
+
+    const getNextBtn = () => document.querySelector('#nameSearchResult_next,a.paginate_button.next,li.next a');
+    const nextIsDisabledLocal = (btn) => {
+      if (!btn) return true;
+      const li = btn.closest('li');
+      return btn.classList.contains('disabled') || btn.getAttribute('aria-disabled') === 'true' || (li && li.classList.contains('disabled'));
+    };
+
+    const harvestThisPage = () => {
+      const anchors = [...document.querySelectorAll('a[href*="caseNumber="],a[href*="inputVO.caseNumber="],a[href*="ci="],a[href*="courtCode="],a[href*="courtId="],a[href*="inputVO.courtId="],a[href*="l="]')];
+      for (const a of anchors) {
+        const p = parseCaseFromUrl(a.href || '');
+        if (!p?.caseKey) continue;
+        if (seen.has(p.caseKey)) continue;
+        seen.add(p.caseKey);
+        out.push(p);
+      }
+    };
+
+    for (let guard = 0; guard < 250; guard++) {
+      harvestThisPage();
+      const nextBtn = getNextBtn();
+      if (nextIsDisabledLocal(nextBtn)) break;
+      const beforeSnap = snapshotTbody();
+      nextBtn.click();
+      const changed = await waitForTbodyChange(beforeSnap, 8000);
+      if (!changed) { dbg('pagination_no_redraw', { guard }); break; }
+      await sleep(150);
+    }
+    return out;
+  }
+/************************************************************
+   * Network helper (same idea as ICBINCN, with capture)
+   ************************************************************/
+  async function postFormJson(pathOrUrl, formObj = {}, { qs = '' } = {}) {
+    const url = new URL(pathOrUrl, location.origin);
+    if (qs) url.search = qs.startsWith('?') ? qs : `?${qs}`;
+
+    const body = new URLSearchParams();
+    for (const [k, v] of Object.entries(formObj || {})) body.set(k, v === undefined || v === null ? '' : String(v));
+
+    const resp = await fetch(url.toString(), {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        Accept: 'application/json,text/javascript, */*; q=0.01',
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      body: body.toString(),
+    });
+
+    const txt = await resp.text();
+    const ct = String(resp.headers.get('content-type') || '').toLowerCase();
+
+    if (!resp.ok) {
+      bumpNetStat(url.pathname, 'httpErr');
+      dbg('http_error', { status: resp.status, path: url.pathname, preview: txt.slice(0, 240) });
+      const err = new Error(`HTTP ${resp.status} for ${url.pathname}`);
+      err.status = resp.status; err.path = url.pathname; err.preview = txt.slice(0, 240);
+      throw err;
+    }
+
+    if (looksLikeJson(txt)) {
+      bumpNetStat(url.pathname, 'json');
+      try { return JSON.parse(txt); }
+      catch {
+        dbg('json_parse_error', { path: url.pathname, preview: txt.slice(0, 240) });
+        const err = new Error(`JSON parse failed for ${url.pathname}`);
+        err.status = resp.status; err.path = url.pathname;
+        throw err;
+      }
+    }
+
+    if (looksLikeHtml(txt) || ct.includes('text/html')) {
+      bumpNetStat(url.pathname, 'html');
+      const title = extractHtmlTitle(txt);
+      const sig = htmlSignatures(txt);
+      const respUrl = String(resp.url || '');
+      const redirected = !!resp.redirected;
+
+      saveLastHtml({
+        ts: new Date().toISOString(),
+        url: location.href,
+        path: url.pathname,
+        status: resp.status,
+        ct,
+        respUrl,
+        redirected,
+        title,
+        sig,
+        html: String(txt).slice(0, 250000),
+      });
+
+      dbg('html_instead_of_json', { path: url.pathname, status: resp.status, ct, respUrl, redirected, title, sig, preview: txt.slice(0, 240) });
+
+      const err = new Error(`HTML instead of JSON for ${url.pathname}`);
+      err.status = resp.status; err.path = url.pathname; err.retryable = true;
+      err.htmlTitle = title; err.htmlSig = sig; err.respUrl = respUrl; err.redirected = redirected;
+      err.preview = txt.slice(0, 2000);
+      throw err;
+    }
+
+    dbg('non_json_response', { path: url.pathname, status: resp.status, preview: txt.slice(0, 240) });
+    const err = new Error(`Non-JSON response for ${url.pathname}`);
+    err.status = resp.status; err.path = url.pathname; err.retryable = true;
+    throw err;
+  }
+
+  function isRetryableError(err) {
+    const s = Number(err?.status || 0);
+    if ([429, 502, 503, 504].includes(s)) return true;
+    if (err?.retryable === true) return true;
+    const msg = String(err?.message || '');
+    if (/HTML instead of JSON|Non-JSON response|JSON parse failed/i.test(msg)) return true;
+    return false;
+  }
+
+  async function postFormJsonRetry(pathOrUrl, formObj = {}, opts = {}, retryCfg = {}) {
+    const retries = Number(retryCfg.retries ?? 3);
+    const baseDelay = Number(retryCfg.baseDelay ?? 250);
+    let lastErr = null;
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        if (attempt > 0) {
+          const jitter = Math.floor(Math.random() * 120);
+          const delay = Math.min(2500, baseDelay * Math.pow(2, attempt - 1) + jitter);
+          await sleep(delay);
+        }
+        return await postFormJson(pathOrUrl, formObj, opts);
+      } catch (e) {
+        lastErr = e;
+        dbg('post_retry_fail', { attempt, msg: String(e?.message || e), status: e?.status || '', path: e?.path || '' });
+        if (!isRetryableError(e) || attempt === retries) break;
+      }
+    }
+    throw lastErr;
+  }
+
+  /************************************************************
+   * Data extraction helpers (header/party/charges/docket)
+   ************************************************************/
+  function headerBasics(headerResp) {
+    const caseNumber = norm(headerResp?.caseNumber || '');
+    const courtId = norm(headerResp?.courtId || '');
+    const caseDesc = norm(headerResp?.caseDesc || '');
+    const caseTitle = caseNumber && caseDesc ? `${caseNumber} – ${caseDesc}` : (caseDesc || caseNumber || '(- - -)');
+    const location = norm(headerResp?.location || '') || '- - -';
+    const disposition = norm(headerResp?.caseDispositionDetail?.dispositionDescription || '') || '- - -';
+    return { caseNumber, courtId, caseTitle, location, disposition };
+  }
+
+  function extractDefendantYobText(partyResp) {
+    const list = partyResp?.partyDetailsList || [];
+    const def = list.find((x) => String(x?.descCode || '').toUpperCase() === 'DFT' || /defendant/i.test(String(x?.desc || '')));
+    return norm(def?.formattedBirthDate || '') || '- - -';
+  }
+
+  function extractChargeLevelAndClass(chargesResp, headerResp) {
+    const arr = Array.isArray(chargesResp) ? chargesResp : Array.isArray(headerResp?.caseChargeList) ? headerResp.caseChargeList : [];
+    if (!arr || !arr.length) return { level: '', classText: '', desc: '' };
+
+    const first = arr[0] || {};
+    const desc = norm(first.chargeDescription || '') || '';
+
+    // "level": misdemeanor/felony often appears in chargeCodeLevelDescription
+    const lvlRaw = norm(first.chargeCodeLevelDescription || first.chargeLevelDescription || '');
+    const lvlNorm = normLower(lvlRaw);
+
+    let level = '';
+    if (lvlNorm.includes('felony')) level = 'felony';
+    else if (lvlNorm.includes('misdemeanor')) level = 'misdemeanor';
+
+    // "class": try a bunch of likely fields; Case.net varies by case type
+    const classCandidates = [
+      first.chargeCodeClassDescription,
+      first.chargeCodeClassLevelDescription,
+      first.chargeClassDescription,
+      first.chargeCodeLevelClassDescription,
+      first.chargeCodeSubLevelDescription,
+      first.chargeDegreeDescription,
+      first.chargeCodeDescription,
+    ].map((x) => norm(x || '')).filter(Boolean);
+
+    let classText = classCandidates[0] || '';
+
+// If no separate class field exists, use the level description ("Felony D", "Misdemeanor A", etc.)
+if (!classText && lvlRaw) classText = lvlRaw;
+
+return { level, classText, desc, lvlRaw };
+  }
+
+  function docketEntryText(e) {
+    const desc = norm(e?.docketDesc || '');
+    const txt = norm(e?.docketText || '');
+    return norm([desc, txt].filter(Boolean).join(' — '));
+  }
+
+  function findRecallHitDateWithinWindow(docketList, serviceDt) {
+  if (!(serviceDt instanceof Date)) return { ok: false, reason: 'no_service_date' };
+
+  const winStart = addDays(serviceDt, -RECALL_WINDOW_BEFORE_DAYS);
+  const winEnd = addDays(serviceDt, RECALL_WINDOW_AFTER_DAYS);
+
+  const needles = [
+    'recall', 'recalled',
+    'tap in', 'tap program',
+    'warrant withdrawn', 'withdrawn warrant',
+    'warrant recall', 'recall warrant',
+    'recalled/withdrawn',
+    'order to recall warrant',
+    'quash', 'set aside warrant', 'warrant set aside',
+  ];
+
+  const MONTHS = {
+    jan: 0, january: 0,
+    feb: 1, february: 1,
+    mar: 2, march: 2,
+    apr: 3, april: 3,
+    may: 4,
+    jun: 5, june: 5,
+    jul: 6, july: 6,
+    aug: 7, august: 7,
+    sep: 8, sept: 8, september: 8,
+    oct: 9, october: 9,
+    nov: 10, november: 10,
+    dec: 11, december: 11,
+  };
+
+  const uniqByIsoDay = (arr) => {
+    const seen = new Set();
+    const out = [];
+    for (const x of arr) {
+      const key = x?.dt ? x.dt.toISOString().slice(0,10) : '';
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(x);
+    }
+    return out;
+  };
+
+  const parseDdMonYy = (s) => {
+    // matches 07-OCT-20, 07 OCT 20, 7-Oct-2020, etc.
+    const m = String(s || '').match(/\b(\d{1,2})\s*[-\/ ]\s*([A-Za-z]{3,9})\s*[-\/ ]\s*(\d{2,4})\b/);
+    if (!m) return null;
+    const dd = Number(m[1]);
+    const monKey = String(m[2] || '').toLowerCase();
+    const mm = MONTHS[monKey.slice(0,3)] ?? MONTHS[monKey] ?? null;
+    if (mm === null || !dd) return null;
+
+    let yy = Number(m[3]);
+    if (String(m[3]).length === 2) yy = (yy >= 70 ? 1900 + yy : 2000 + yy);
+
+    const dt = new Date(yy, mm, dd);
+    if (dt.getFullYear() !== yy || dt.getMonth() !== mm || dt.getDate() !== dd) return null;
+    dt.setHours(0,0,0,0);
+    return dt;
+  };
+
+  const parseMonthNameDdYyyy = (s) => {
+    // matches OCTOBER 22, 2020
+    const m = String(s || '').match(/\b(JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\s+(\d{1,2}),\s*(\d{4})\b/i);
+    if (!m) return null;
+    const monKey = String(m[1]).toLowerCase();
+    const mm = MONTHS[monKey] ?? null;
+    const dd = Number(m[2]);
+    const yy = Number(m[3]);
+    if (mm === null || !dd || !yy) return null;
+
+    const dt = new Date(yy, mm, dd);
+    if (dt.getFullYear() !== yy || dt.getMonth() !== mm || dt.getDate() !== dd) return null;
+    dt.setHours(0,0,0,0);
+    return dt;
+  };
+
+  const parseAllDatesFromText = (text) => {
+    const t = String(text || '');
+    const dates = [];
+
+    // MM/DD/YYYY (reuse your existing parser but scan)
+    const mmddyyyy = t.match(/\b\d{1,2}\/\d{1,2}\/\d{4}\b/g) || [];
+    for (const s of mmddyyyy) {
+      const dt = parseMmDdYyyy(s);
+      if (dt) dates.push(dt);
+    }
+
+    // DD-MON-YY or DD-MON-YYYY (Served Date - 07-OCT-20)
+    // scan occurrences
+    const ddmon = t.match(/\b\d{1,2}\s*[-\/ ]\s*[A-Za-z]{3,9}\s*[-\/ ]\s*\d{2,4}\b/g) || [];
+    for (const s of ddmon) {
+      const dt = parseDdMonYy(s);
+      if (dt) dates.push(dt);
+    }
+
+    // MONTHNAME DD, YYYY (CASE SET ON OCTOBER 22, 2020)
+    const monthNameHits = t.match(/\b(?:JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\s+\d{1,2},\s*\d{4}\b/gi) || [];
+    for (const s of monthNameHits) {
+      const dt = parseMonthNameDdYyyy(s);
+      if (dt) dates.push(dt);
+    }
+
+    // de-dupe by day
+    const uniq = [];
+    const seen = new Set();
+    for (const dt of dates) {
+      const k = dt.toISOString().slice(0,10);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      uniq.push(dt);
+    }
+    return uniq;
+  };
+
+  const inWindow = (dt) => dt.getTime() >= winStart.getTime() && dt.getTime() <= winEnd.getTime();
+
+  let lastSeenDate = null; // carry-forward date separator / filingDate
+  const hits = [];
+
+  for (const e of docketList || []) {
+    const line = docketEntryText(e);
+    const hay = normLower(line);
+
+    // Update carry-forward date if we see a MM/DD/YYYY filingDate
+    const fd = parseMmDdYyyy(e?.filingDate || '');
+    if (fd) lastSeenDate = fd;
+
+    // If this entry has no recall-related keywords, skip early (but still allow it to refresh lastSeenDate)
+    if (!needles.some((n) => hay.includes(n))) continue;
+
+    // candidate dates for this entry:
+    const dates = [];
+
+    // 1) filingDate if present
+    if (fd) dates.push(fd);
+
+    // 2) associated scheduled/info dates (MM/DD/YYYY)
+    const s = (e?.associatedDocketScheduledInfo || [])[0];
+    if (s?.associatedDate) {
+      const ad = parseMmDdYyyy(s.associatedDate);
+      if (ad) dates.push(ad);
+    }
+    const d2 = (e?.associatedDocketInfoDetails || [])[0]?.associatedDate || '';
+    if (d2) {
+      const ad2 = parseMmDdYyyy(d2);
+      if (ad2) dates.push(ad2);
+    }
+
+    // 3) any dates embedded in text, including 07-OCT-20 and OCTOBER 22, 2020
+    const embedded = parseAllDatesFromText(line);
+    for (const dt of embedded) dates.push(dt);
+
+    // 4) carry-forward date separator fallback
+    if (lastSeenDate) dates.push(lastSeenDate);
+
+    // evaluate dates in-window
+    const usable = dates
+      .filter((dt) => dt instanceof Date && !Number.isNaN(dt.getTime()))
+      .map((dt) => ({ dt, line: line.slice(0, 260) }))
+      .filter((x) => inWindow(x.dt));
+
+    for (const u of usable) hits.push(u);
+  }
+
+  const deduped = uniqByIsoDay(hits);
+  if (!deduped.length) {
+    return {
+      ok: false,
+      reason: 'no_recall_hit_in_window',
+      winStart: fmtMmDdYyyy(winStart),
+      winEnd: fmtMmDdYyyy(winEnd),
+    };
+  }
+
+  // Pick closest date to service date
+  deduped.sort((a, b) => Math.abs(a.dt - serviceDt) - Math.abs(b.dt - serviceDt));
+  const best = deduped[0];
+
+  return {
+    ok: true,
+    recallDate: fmtMmDdYyyy(best.dt),
+    recallLine: best.line,
+    winStart: fmtMmDdYyyy(winStart),
+    winEnd: fmtMmDdYyyy(winEnd),
+    hitCount: deduped.length,
+  };
+}
+
+  /************************************************************
+   * Scrape a single candidate case and score it against the row
+   ************************************************************/
+  async function evaluateCandidateCase(caseRef, row) {
+    const { caseNumber, courtId, caseKey } = caseRef;
+    const out = {
+      caseKey,
+      caseNumber,
+      courtId,
+      caseTitle: '',
+      location: '',
+      yobText: '',
+      chargeLevel: '',
+      chargeClass: '',
+      recallOk: false,
+      recallDate: '',
+      recallLine: '',
+      reasons: [],
+      passed: false,
+    };
+
+    // Header
+    const header = await postFormJsonRetry('/casenet/cases/newHeaderData.do', {
+      caseNumber, courtId,
+      isTicket: '', locnCode: '', isCriminal: '', diposed: '', pleaAndPayInd: '',
+    });
+    const hb = headerBasics(header);
+    out.caseTitle = hb.caseTitle;
+    out.location = hb.location;
+
+    const locNorm = normLoc(out.location);
+const needLoc = normLoc(row.requiredLocationRaw || REQUIRED_LOCATION);
+
+// Require both "st" and "louis" and "county" to be present (order-agnostic-ish)
+const okLoc = needLoc.split(' ').filter(Boolean).every((tok) => locNorm.includes(tok));
+
+if (!okLoc) {
+  out.reasons.push(`location_mismatch(found="${out.location}")`);
+  return out;
+}
+
+    // Party: YOB text
+    const party = await postFormJsonRetry('/casenet/cases/party.do', { caseNumber, courtId, isTicket: '' });
+    out.yobText = extractDefendantYobText(party);
+
+    // Filter #2: YOB mismatch elimination (same behavior as your tool)
+    const m = yobMatchesExpected(row.yob, out.yobText);
+    if (!m.ok) {
+      out.reasons.push(`yob_mismatch(found=${(m.years || []).join(',') || 'none'}, expected=${row.yob})`);
+      return out;
+    }
+
+    // Charges: level + class
+    let chargesResp = null;
+    try {
+      chargesResp = await postFormJsonRetry('/casenet/cases/charges.do', {
+        caseNumber, courtId, isTicket: '', tabName: 'Charge',
+      });
+    } catch (e) {
+      dbg('charges_fetch_failed', { caseKey, msg: String(e?.message || e) });
+    }
+    const ch = extractChargeLevelAndClass(chargesResp, header);
+    out.chargeLevel = ch.level || '';
+    out.chargeClass = ch.classText || '';
+
+    // Filter #3: Charge level must match batch column (misdemeanor|felony)
+    if (row.chargeLevel && out.chargeLevel && row.chargeLevel !== out.chargeLevel) {
+      out.reasons.push(`charge_level_mismatch(found=${out.chargeLevel}, expected=${row.chargeLevel})`);
+      return out;
+    }
+    // If we couldn't determine charge level from JSON, keep it but flag
+    if (row.chargeLevel && !out.chargeLevel) out.reasons.push('charge_level_unknown_keep');
+
+    // Docket: recall-window hit
+    const docket = await postFormJsonRetry('/casenet/cases/docketEntriesSearch.do',
+      { caseNumber, courtId, isTicket: '', tabName: 'Docket' },
+      { qs: 'displayOption=A&sortOption=D&hasChange=false' }
+    );
+    const docketList = docket?.docketTabModelList || [];
+
+    // Filter #4: recall date hit within window
+    const serviceDt = row.serviceDt ? new Date(row.serviceDt) : null;
+    if (serviceDt) serviceDt.setHours(0,0,0,0);
+    const rh = findRecallHitDateWithinWindow(docketList, serviceDt);
+
+    if (!rh.ok) {
+      out.reasons.push(`recall_window_fail(${rh.reason})`);
+      return out;
+    }
+
+    out.recallOk = true;
+    out.recallDate = rh.recallDate;
+    out.recallLine = rh.recallLine;
+
+    out.passed = true;
+    return out;
+  }
+
+  /************************************************************
+   * Simple concurrency pool (same pattern as your script)
+   ************************************************************/
+  async function runPool(items, workerCount, workerFn) {
+    let idx = 0;
+    const results = [];
+    const errors = [];
+
+    async function worker(workerId) {
+      while (true) {
+        if (isStop()) return;
+        const my = idx++;
+        if (my >= items.length) return;
+        const item = items[my];
+        try {
+          const out = await workerFn(item, my, workerId);
+          results.push(out);
+        } catch (e) {
+          errors.push({ caseKey: item?.caseKey || '', msg: String(e?.message || e), status: e?.status || '', path: e?.path || '' });
+          dbg('worker_case_error', { workerId, caseKey: item?.caseKey || '', msg: String(e?.message || e), status: e?.status || '', path: e?.path || '' });
+        }
+      }
+    }
+
+    const workers = [];
+    for (let i = 0; i < Math.max(1, workerCount); i++) workers.push(worker(i));
+    await Promise.all(workers);
+    return { results, errors };
+  }
+
+  /************************************************************
+   * Pick best candidate among those that passed:
+   * - closest recallDate to service date
+   ************************************************************/
+  function pickBestPassed(candidates, row) {
+    const passed = (candidates || []).filter((c) => c?.passed === true);
+    if (!passed.length) return null;
+
+    const serviceDt = row.serviceDt ? new Date(row.serviceDt) : null;
+    if (serviceDt) serviceDt.setHours(0,0,0,0);
+
+    const withScore = passed.map((c) => {
+      const rd = parseMmDdYyyy(c.recallDate || '') || null;
+      const diff = (serviceDt && rd) ? Math.abs(rd - serviceDt) : Number.MAX_SAFE_INTEGER;
+      return { c, diff };
+    });
+
+    withScore.sort((a, b) => a.diff - b.diff);
+    return withScore[0].c;
+  }
+/************************************************************
+   * Batch runner state
+   ************************************************************/
+  function loadState() {
+    return loadJson(KEY_STATE, {
+      active: false,
+      step: 'idle',
+      idx: 0,
+      rows: [],
+      current: null,
+      lastProgressTs: 0,
+      conc: DEFAULT_CONCURRENCY,
+      startedAt: '',
+      finishedAt: '',
+      stats: { total: 0, done: 0, found: 0, none: 0, errors: 0 },
+    });
+  }
+
+  function saveState(st) { saveJson(KEY_STATE, st || null); }
+  function clearState() { saveJson(KEY_STATE, null); }
+
+  function startBatchFromTextarea(text, conc) {
+    const rows = parseBatchTextarea(text);
+    const st = loadState();
+    st.active = true;
+    st.step = 'go_search';
+    st.idx = 0;
+    st.rows = rows;
+    st.current = null;
+    st.conc = Number(conc || DEFAULT_CONCURRENCY);
+    st.startedAt = new Date().toISOString();
+    st.finishedAt = '';
+    st.stats = { total: rows.length, done: 0, found: 0, none: 0, errors: 0 };
+    saveState(st);
+    return st;
+  }
+
+  function appendResultRow(row, bestCaseOrNull, notes = '') {
+    const log = loadLog();
+    const name = `${norm(row.first)} ${norm(row.last)}`.trim();
+
+    if (!bestCaseOrNull) {
+      log.push({
+        name,
+        caseNumber: '',
+        chargeType: row.chargeLevel || '',
+        chargeClass: '',
+        recallDate: '',
+        notes: notes || 'NO MATCH',
+        sourceRow: row.rowIndex,
+      });
+      saveLog(log);
+      return;
+    }
+
+    log.push({
+      name,
+      caseNumber: bestCaseOrNull.caseNumber || '',
+      chargeType: (bestCaseOrNull.chargeLevel || row.chargeLevel || ''),
+      chargeClass: bestCaseOrNull.chargeClass || '',
+      recallDate: bestCaseOrNull.recallDate || '',
+      notes: notes || '',
+      sourceRow: row.rowIndex,
+    });
+    saveLog(log);
+  }
+
+  function buildCopyTable() {
+    const log = loadLog();
+    // TSV output for easy paste into Sheets
+    const header = ['Name', 'Case Number', 'Charge Type', 'Charge Class'].join('\t');
+    const lines = log.map((r) => [
+      norm(r?.name || ''),
+      norm(r?.caseNumber || ''),
+      norm(r?.chargeType || ''),
+      norm(r?.chargeClass || ''),
+    ].join('\t'));
+    return [header, ...lines].join('\n');
+  }
+
+  async function processCurrentRowOnResultsPage(st) {
+    const row = st.rows[st.idx];
+    if (!row) return { done: true };
+
+    const ready = await waitForResultsReady();
+    if (!ready.ready) {
+      dbg('results_not_ready_timeout', { idx: st.idx, rowIndex: row.rowIndex });
+      return { done: false, fatal: false, note: 'Results not ready (timeout)' };
+    }
+    if (ready.noMatches) {
+      appendResultRow(row, null, 'NO RESULTS');
+      return { done: true, matched: false };
+    }
+
+    setShowEntriesTo100();
+    uiStatus(`Row ${st.idx + 1}/${st.rows.length}: harvesting cases…`);
+    render();
+
+    const cases = await harvestAllResultCaseKeys();
+    dbg('harvest_done', { idx: st.idx, count: cases.length });
+
+    if (!cases.length) {
+      appendResultRow(row, null, 'NO CASE LINKS FOUND');
+      return { done: true, matched: false };
+    }
+
+    if (isStop()) return { done: false, stopped: true };
+
+    uiStatus(`Row ${st.idx + 1}/${st.rows.length}: checking ${cases.length} candidates…`);
+    render();
+
+    const { results, errors } = await runPool(
+      cases,
+      Math.max(1, st.conc),
+      async (caseRef) => {
+        if (isStop()) return null;
+        await sleep(60);
+        return await evaluateCandidateCase(caseRef, row);
+      }
+    );
+
+    if (errors?.length) {
+      st.stats.errors += errors.length;
+      dbg('candidate_errors', { idx: st.idx, count: errors.length, sample: errors.slice(0, 6) });
+    }
+
+    const best = pickBestPassed(results, row);
+    if (!best) {
+      // Helpful notes: top rejection reasons summary
+      const reasons = (results || [])
+        .filter(Boolean)
+        .flatMap((c) => (c?.reasons || []).map((x) => String(x)));
+      const top = {};
+      for (const r of reasons) top[r] = (top[r] || 0) + 1;
+      const topList = Object.entries(top).sort((a,b) => b[1]-a[1]).slice(0, 3).map(([k,v]) => `${k}×${v}`).join('; ');
+      appendResultRow(row, null, topList ? `NO MATCH — ${topList}` : 'NO MATCH');
+      return { done: true, matched: false };
+    }
+
+    appendResultRow(row, best, best.recallDate ? `Recall: ${best.recallDate}` : '');
+    return { done: true, matched: true };
+  }
+
+  async function batchTick() {
+    const st = loadState();
+    if (!st?.active) return;
+    if (isRun()) return;
+    if (isStop()) return;
+
+    const total = st.rows?.length || 0;
+    if (st.idx >= total) {
+      st.active = false;
+      st.step = 'idle';
+      st.finishedAt = new Date().toISOString();
+      saveState(st);
+      uiStatus(`Done. ${st.stats.done}/${st.stats.total} processed. Found: ${st.stats.found}. No match: ${st.stats.none}.`);
+      render();
+      dbg('batch_done', { stats: st.stats });
+      return;
+    }
+
+    const row = st.rows[st.idx];
+    const who = `${row.first} ${row.last}`.trim();
+    const yob = row.yob || '';
+    const lvl = row.chargeLevel || '';
+    const svc = row.serviceDateStr || '';
+
+    if (st.step === 'go_search') {
+      uiStatus(`Row ${st.idx + 1}/${total}: searching ${who} (YOB ${yob}) — ${svc} — ${lvl || 'level?'}…`);
+      render();
+      setRun(true);
+      clearRunArtifacts();
+
+      if (!isNameSearchPage()) {
+        dbg('nav_to_namesearch', { idx: st.idx });
+        location.href = canonicalNameSearchUrl();
+        st.step = 'go_search';
+        saveState(st);
+        setRun(false);
+        return;
+      }
+
+      fillNameSearchForm({ first: row.first, last: row.last, yob: row.yob });
+      const ok = submitNameSearchForm();
+      if (!ok) {
+        st.stats.done += 1;
+        st.stats.none += 1;
+        appendResultRow(row, null, 'SUBMIT FAILED');
+        dbg('submit_failed', { idx: st.idx, rowIndex: row.rowIndex });
+        st.idx += 1;
+        st.step = 'go_search';
+        saveState(st);
+        setRun(false);
+        render();
+        return;
+      }
+
+      st.step = 'waiting_results';
+      st.lastProgressTs = Date.now();
+      saveState(st);
+      setRun(false);
+      return;
+    }
+
+    if (st.step === 'waiting_results') {
+      // Wait until we land on results page
+      if (isNameSearchResultsPage() || isNoMatchesMessagePage()) {
+        st.step = 'processing_results';
+        saveState(st);
+        return;
+      }
+      // If we got stuck somewhere odd, recover
+      const age = Date.now() - Number(st.lastProgressTs || 0);
+      if (age > 15000) {
+        dbg('waiting_results_timeout_recover', { idx: st.idx, ageMs: age });
+        location.href = canonicalNameSearchUrl();
+        st.step = 'go_search';
+        saveState(st);
+      }
+      return;
+    }
+
+    if (st.step === 'processing_results') {
+      if (!isNameSearchResultsPage() && !isNoMatchesMessagePage()) {
+        // unexpected
+        dbg('processing_not_on_results', { idx: st.idx });
+        location.href = canonicalNameSearchUrl();
+        st.step = 'go_search';
+        saveState(st);
+        return;
+      }
+
+      setRun(true);
+      try {
+        const res = await processCurrentRowOnResultsPage(st);
+        st.stats.done += 1;
+        if (res?.matched) st.stats.found += 1;
+        else st.stats.none += 1;
+      } catch (e) {
+        st.stats.done += 1;
+        st.stats.none += 1;
+        appendResultRow(row, null, `FATAL: ${String(e?.message || e).slice(0, 120)}`);
+        dbg('row_fatal', { idx: st.idx, msg: String(e?.message || e), stack: String(e?.stack || '') });
+      } finally {
+        setRun(false);
+      }
+
+      st.idx += 1;
+      st.step = 'go_search';
+      saveState(st);
+
+      // Always return to canonical name search between rows
+      location.href = canonicalNameSearchUrl();
+      render();
+      return;
+    }
+  }
+ /************************************************************
+   * UI
+   ************************************************************/
+  GM_addStyle(`:root{ --mo-bg:#f5f7fb; --mo-surface:#fff; --mo-surface-2:#eef2f7; --mo-border:#d7dee8;
+                     --mo-text:#0f172a; --mo-muted:#475569; --mo-primary:#2563eb; --mo-primary-dk:#1d4ed8;
+                     --mo-danger:#b42318; --mo-danger-dk:#912018; --mo-shadow:0 10px 28px rgba(15,23,42,.18);}
+
+    #moJsonDock{position:fixed; right:12px; bottom:12px; width:560px; max-height:72vh; z-index:999999;
+                font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; box-shadow:var(--mo-shadow);
+                border-radius:14px; overflow:hidden; border:1px solid var(--mo-border); background:var(--mo-bg);
+                box-sizing:border-box; display:flex; flex-direction:column;}
+    #moJsonHeader{background:var(--mo-surface-2); border-bottom:1px solid var(--mo-border); padding:10px;
+                  display:flex; align-items:center; justify-content:space-between; gap:8px; position:relative; padding-right:40px;}
+    #moJsonHeader .title{font-weight:900; font-size:14px; color:var(--mo-text); user-select:none;}
+    #moJsonHeader .btnRow{display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; min-width:0;}
+    #moJsonCloseX{position:absolute; top:8px; right:10px; width:22px; height:22px; line-height:20px; border:none;
+                  background:transparent; color:var(--mo-muted); font-size:18px; font-weight:900; cursor:pointer;
+                  border-radius:8px; display:flex; align-items:center; justify-content:center;
+                  transition:background 120ms ease,color 120ms ease;}
+    #moJsonCloseX:hover{background:rgba(37,99,235,.10); color:var(--mo-text);}
+    #moJsonStatus{padding:8px 10px; border-bottom:1px solid var(--mo-border); font-size:12px; color:var(--mo-muted);
+                  background:var(--mo-surface-2); white-space:pre-wrap; flex:0 0 auto;}
+    #moJsonContent{padding:10px; overflow:auto; background:var(--mo-bg); flex:1 1 auto; min-height:0;}
+    #moJsonFooter{background:var(--mo-surface-2); border-top:1px solid var(--mo-border); padding:10px; flex:0 0 auto;}
+    #moJsonDock *{box-sizing:border-box;}
+
+    .moBlock{background:var(--mo-surface); border:1px solid var(--mo-border); border-radius:12px; padding:10px; margin-bottom:10px;}
+    .moBlock h3{margin:0 0 6px 0; font-size:12px; color:var(--mo-text); font-weight:950;}
+    .moBtn{background:#fff; color:var(--mo-text); border:1.5px solid var(--mo-border); padding:6px 10px; border-radius:10px;
+           cursor:pointer; font-size:12px; font-weight:900; user-select:none;
+           transition:transform 80ms ease,filter 120ms ease,background 120ms ease,border-color 120ms ease;}
+    .moBtn:hover{filter:brightness(0.97);} .moBtn:active{transform:translateY(1px); filter:brightness(0.93);}
+
+    #moJsonCopy{background:var(--mo-primary); border:1.5px solid var(--mo-border); color:#fff;}
+    #moJsonCopy:hover{background:var(--mo-primary-dk);}
+    #moJsonStop{background:var(--mo-danger); border:1.5px solid var(--mo-border); color:#fff;}
+    #moJsonStop:hover{background:var(--mo-danger-dk);}
+
+    .moBatchArea{width:100%; min-height:210px; resize:vertical; padding:10px; border:1px solid var(--mo-border);
+                 border-radius:12px; font-size:12px; line-height:1.35; outline:none; background:#fff; color:var(--mo-text);}
+    .moBatchArea:focus{border-color:rgba(37,99,235,.65); box-shadow:0 0 0 3px rgba(37,99,235,.18);}
+
+    .moGoRow{display:flex; gap:10px; align-items:stretch; margin-top:10px; flex-wrap:wrap;}
+    .moGoBtn{flex:1 1 auto; height:44px; padding:0 16px; font-size:13px; font-weight:950; background:#16a34a;
+             border:1.5px solid var(--mo-border); color:#fff; border-radius:12px; cursor:pointer;}
+    .moGoBtn:hover{filter:brightness(0.95);} .moGoBtn:active{filter:brightness(0.90);}
+
+    .moSmallBtn{height:44px; padding:0 12px; border-radius:12px;}
+    .moBottomRow{display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap;}
+    .moHidden{display:none;}
+  `);
+
+  function escapeHtml(s) {
+    return String(s ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+
+  const dock = document.createElement('div');
+  dock.id = 'moJsonDock';
+  dock.innerHTML = `
+    <div id="moJsonHeader">
+      <div class="title">Tap In Center — Batch Case # Retrieval</div>
+      <div class="btnRow">
+        <button class="moBtn" id="moJsonCopy">Copy</button>
+        <button class="moBtn" id="moJsonStop">Stop</button>
+      </div>
+      <button id="moJsonCloseX" title="Close">×</button>
+    </div>
+    <div id="moJsonStatus">Ready.</div>
+    <div id="moJsonContent"></div>
+    <div id="moJsonFooter">
+      <div class="moBottomRow">
+        <button class="moBtn" id="moJsonClearEntries">Clear Entries</button>
+        <button class="moBtn" id="moJsonClear">Clear Log</button>
+      </div>
+    </div>
+  `;
+  (document.body || document.documentElement).appendChild(dock);
+
+  const $status = dock.querySelector('#moJsonStatus');
+  const $content = dock.querySelector('#moJsonContent');
+
+  function uiStatus(msg) { $status.textContent = msg; setStatus(msg); }
+
+  function addBlock(title, htmlInner) {
+    const div = document.createElement('div');
+    div.className = 'moBlock';
+    div.innerHTML = `<h3>${escapeHtml(title)}</h3>${htmlInner}`;
+    $content.appendChild(div);
+  }
+
+  function loadDraft() { return loadJson(KEY_UI_DRAFT, { text: '', conc: DEFAULT_CONCURRENCY }); }
+  function saveDraft(d) { saveJson(KEY_UI_DRAFT, d || { text: '', conc: DEFAULT_CONCURRENCY }); }
+
+  function render() {
+    const st = loadState();
+    const log = loadLog();
+    const draft = loadDraft();
+
+    $content.innerHTML = '';
+
+    addBlock('Batch Input (paste rows from Google Sheets)', `
+      <textarea id="ticBatchText" class="moBatchArea" placeholder="Paste tab-delimited rows here...">${escapeHtml(draft.text || '')}</textarea>
+      <div class="moGoRow">
+        <button id="ticGo" class="moGoBtn">GO — Start Batch Search (Criminal)</button>
+        <button id="ticOpenLastHtml" class="moBtn moSmallBtn">Open Last HTML</button>
+      </div>
+      <div style="margin-top:8px; font-size:12px; color:var(--mo-muted);">
+        Concurrency per person:
+        <input id="ticConc" type="number" min="1" max="8" value="${escapeHtml(String(draft.conc || DEFAULT_CONCURRENCY))}"
+               style="width:64px; padding:6px 8px; border:1px solid var(--mo-border); border-radius:10px; margin-left:6px;">
+        <span style="margin-left:10px;">Recommended: 3–4</span>
+      </div>
+    `);
+
+    addBlock('Status', `
+      <pre style="margin:0; font-size:13px; line-height:1.45; white-space:pre-wrap; word-break:break-word; color:#111;">
+Running?: ${isRun() ? 'Yes' : 'No'}
+Stop?: ${isStop() ? 'Yes' : 'No'}
+Rows queued: ${(st?.rows?.length || 0)}
+Row index: ${(st?.idx || 0)} / ${(st?.rows?.length || 0)}
+Results in Log: ${log.length}
+
+Found: ${st?.stats?.found || 0}
+No match: ${st?.stats?.none || 0}
+Errors: ${st?.stats?.errors || 0}
+      </pre>
+    `);
+  }
+
+  /************************************************************
+   * Buttons + inputs
+   ************************************************************/
+  dock.addEventListener('click', async (e) => {
+    const id = e?.target?.id;
+
+    if (id === 'ticGo') {
+      setStop(false);
+      setRun(false);
+      clearRunArtifacts();
+
+      const text = dock.querySelector('#ticBatchText')?.value || '';
+      const conc = Number(dock.querySelector('#ticConc')?.value || DEFAULT_CONCURRENCY) || DEFAULT_CONCURRENCY;
+
+      // Start fresh batch: clear log+debug automatically (safer for large runs)
+      saveLog([]);
+      saveDebug([]);
+      clearState();
+
+      saveDraft({ text, conc });
+
+      const st = startBatchFromTextarea(text, conc);
+      uiStatus(`Batch loaded: ${st.rows.length} rows. Starting…`);
+      dbg('batch_start', { rows: st.rows.length, conc });
+
+      // Navigate to name search page to begin
+      if (!isNameSearchPage()) location.href = canonicalNameSearchUrl();
+      render();
+      return;
+    }
+
+    if (id === 'moJsonStop') {
+      setStop(true);
+      setRun(false);
+      uiStatus('Stopped.');
+      dbg('stop_clicked', {});
+      render();
+      return;
+    }
+
+    if (id === 'moJsonCopy') {
+      const out = buildCopyTable();
+      GM_setClipboard(out || '', 'text');
+      uiStatus('Copied to Clipboard');
+      render();
+      return;
+    }
+
+    if (id === 'moJsonClearEntries') {
+      saveDraft({ text: '', conc: loadDraft().conc || DEFAULT_CONCURRENCY });
+      uiStatus('Entries Cleared');
+      dbg('entries_cleared', {});
+      render();
+      return;
+    }
+
+    if (id === 'moJsonClear') {
+      saveLog([]);
+      saveDebug([]);
+      clearRunArtifacts();
+      clearState();
+      setStop(true);
+      setRun(false);
+      uiStatus('Log Cleared');
+      dbg('log_cleared', {});
+      render();
+      return;
+    }
+
+    if (id === 'ticOpenLastHtml') {
+      openLastHtmlInNewTab();
+      return;
+    }
+
+    if (id === 'moJsonCloseX') {
+      dock.classList.add('moHidden');
+      return;
+    }
+  });
+
+  dock.addEventListener('input', (e) => {
+    const id = e?.target?.id;
+    if (id === 'ticBatchText' || id === 'ticConc') {
+      const text = dock.querySelector('#ticBatchText')?.value || '';
+      const conc = Number(dock.querySelector('#ticConc')?.value || DEFAULT_CONCURRENCY) || DEFAULT_CONCURRENCY;
+      saveDraft({ text, conc });
+    }
+  });
+
+  /************************************************************
+   * INIT
+   ************************************************************/
+  uiStatus(getStatus() || 'Ready.');
+  render();
+
+  setInterval(() => {
+    try { batchTick(); }
+    catch (e) { dbg('tick_error', { msg: String(e?.message || e) }); }
+  }, 900);
+
+})();
