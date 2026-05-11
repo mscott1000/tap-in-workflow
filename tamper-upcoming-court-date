@@ -306,7 +306,9 @@
     all.sort((a, b) => a.dt - b.dt);
     const next = all.find((x) => x.dt.getTime() >= today.getTime());
     if (!next) return 'No Upcoming Court Date Found';
-    return [next.d, next.time || '- - -', next.judge || '- - -', next.locationText || '- - -'].join(' ; ');
+    const judgeText = `in the Court of ${next.judge || '- - -'}`;
+    const locationText = next.locationText ? `${next.locationText}.` : '- - -';
+    return [next.d, next.time || '- - -', judgeText, locationText].join(' ; ');
   }
 
   function buildCourtIdAttemptOrder(initialCourtId, discoveredCourtIds = []) {
@@ -451,14 +453,14 @@
             result: upcoming
           });
           await sleep(100);
-          return `${upcoming} ; ${item.caseNumber}`;
+          return upcoming;
         } catch (err) {
           appendDebug('batch_case_error', {
             caseNumber: item.caseNumber,
             message: String(err?.message || err)
           });
           await sleep(100);
-          return `Error (${String(err?.message || err)}) ; ${item.caseNumber}`;
+          return `Error (${String(err?.message || err)})`;
         } finally {
           appendDebug('batch_case_progress', {
             index: i + 1,
