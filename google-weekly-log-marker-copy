@@ -15,6 +15,8 @@ const WEEKLY_MARKER_COPY_CONFIG = {
 
   // Map: source column -> destination column
   COLUMN_MAP: [
+    { sourceCol: 10, destCol: 27 }, // J -> AA  Notes (Prep Notes)
+    { sourceCol: 11, destCol: 11 }, // K -> K   Intake Notes (Eligible Case Notes)
     { sourceCol: 15, destCol: 5 },  // O -> E   First Name
     { sourceCol: 16, destCol: 6 },  // P -> F   Last Name
     { sourceCol: 17, destCol: 7 },  // Q -> G   Middle Name
@@ -25,7 +27,11 @@ const WEEKLY_MARKER_COPY_CONFIG = {
     { sourceCol: 22, destCol: 18 }, // V -> R   State
     { sourceCol: 23, destCol: 19 }, // W -> S   Zip
     { sourceCol: 24, destCol: 20 }  // X -> T   Email
-  ]
+  ],
+
+  LIBRARY_FORM_SOURCE_VALUE: 'Library form', // H
+  LIBRARY_FORM_DEST_COL: 12, // L (Online Form)
+  LIBRARY_FORM_DEST_VALUE: 'Yes'
 };
 
 /**
@@ -132,11 +138,12 @@ function processWeeklyMarkerQueue_(sourceSheet) {
 
   const numRows = lastRow - firstDataRow + 1;
 
-  // Read O:AH in one batch:
+  // Read H:AH in one batch:
+  // H:K   = conditional/memo fields for intake notes + online form flag
   // O:X   = source values we copy
   // AG    = marker
   // AH    = status
-  const readStartCol = 15; // O
+  const readStartCol = 8;  // H
   const readEndCol = 34;   // AH
   const readWidth = readEndCol - readStartCol + 1;
 
@@ -261,6 +268,12 @@ function buildWeeklyMarkerPayload_(sourceSheet, sourceRow, cachedRowValues, cach
     WEEKLY_MARKER_COPY_CONFIG.COLUMN_MAP.forEach(map => {
       payload[map.destCol] = cachedRowValues[map.sourceCol - cachedRowStartCol];
     });
+
+    const formValue = String(cachedRowValues[8 - cachedRowStartCol] || '').trim(); // H
+    if (formValue === WEEKLY_MARKER_COPY_CONFIG.LIBRARY_FORM_SOURCE_VALUE) {
+      payload[WEEKLY_MARKER_COPY_CONFIG.LIBRARY_FORM_DEST_COL] = WEEKLY_MARKER_COPY_CONFIG.LIBRARY_FORM_DEST_VALUE;
+    }
+
     return payload;
   }
 
@@ -275,6 +288,11 @@ function buildWeeklyMarkerPayload_(sourceSheet, sourceRow, cachedRowValues, cach
   WEEKLY_MARKER_COPY_CONFIG.COLUMN_MAP.forEach(map => {
     payload[map.destCol] = rowValues[map.sourceCol - minSourceCol];
   });
+
+  const formValue = String(sourceSheet.getRange(sourceRow, 8).getValue() || '').trim(); // H
+  if (formValue === WEEKLY_MARKER_COPY_CONFIG.LIBRARY_FORM_SOURCE_VALUE) {
+    payload[WEEKLY_MARKER_COPY_CONFIG.LIBRARY_FORM_DEST_COL] = WEEKLY_MARKER_COPY_CONFIG.LIBRARY_FORM_DEST_VALUE;
+  }
 
   return payload;
 }
