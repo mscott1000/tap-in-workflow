@@ -13,6 +13,8 @@ const CONFIG = {
 
   MAX_THREADS_PER_RUN: 50,
   MAX_MESSAGES_PER_THREAD: 10,
+  LOCK_WAIT_MS: 10000,
+
 
   // Use Central time explicitly
   TIMEZONE: 'America/Chicago',
@@ -55,134 +57,151 @@ const COLUMNS = [
 ];
 
 function runIngest() {
-  const sheet = SpreadsheetApp.openById(CONFIG.SHEET_ID).getSheetByName(CONFIG.SHEET_NAME);
-  if (!sheet) throw new Error(`Sheet tab not found: ${CONFIG.SHEET_NAME}`);
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(CONFIG.LOCK_WAIT_MS)) {
+    Logger.log('SKIP(lock): another runIngest execution is still running');
+    return;
+  }
 
-  const completedSheet = SpreadsheetApp.openById(CONFIG.SHEET_ID).getSheetByName(CONFIG.COMPLETED_SHEET_NAME);
-  if (!completedSheet) throw new Error(`Sheet tab not found: ${CONFIG.COMPLETED_SHEET_NAME}`);
+  try {
+    const spreadsheet = SpreadsheetApp.openById(CONFIG.SHEET_ID);
+    const sheet = spreadsheet.getSheetByName(CONFIG.SHEET_NAME);
+    if (!sheet) throw new Error(`Sheet tab not found: ${CONFIG.SHEET_NAME}`);
 
-const completedNameIndex = buildCompletedNameIndex_(completedSheet);
-  const lastCol = COLUMNS.length;
+    const threads = GmailApp.search(CONFIG.GMAIL_QUERY, 0, CONFIG.MAX_THREADS_PER_RUN);
+    if (!threads.length) {
+      Logger.log(`Done. Appended=0 Skipped=0 Threads=0`);
+      return;
+    }
 
-  let templateRow;
-try {
-  templateRow = findTemplateRow_(sheet, CONFIG.TEMPLATE_MARKER, CONFIG.TEMPLATE_MARKER_COL);
-} catch (err) {
-  Logger.log(`ERROR: ${err && err.message ? err.message : err}`);
-  // Optional: also write to Apps Script executions log as an exception
-  console.error(err);
-  return; // IMPORTANT: exit before searching Gmail or marking anything read
-}
-let insertAfterRow;
-try {
-  insertAfterRow = findTemplateRow_(sheet, CONFIG.INSERT_MARKER, CONFIG.INSERT_MARKER_COL);
-} catch (err) {
-  Logger.log(`ERROR: ${err && err.message ? err.message : err}`);
-  console.error(err);
-  return; // IMPORTANT: exit before searching Gmail or marking anything read
-}
-  const threads = GmailApp.search(CONFIG.GMAIL_QUERY, 0, CONFIG.MAX_THREADS_PER_RUN);
+    const completedSheet = spreadsheet.getSheetByName(CONFIG.COMPLETED_SHEET_NAME);
+    if (!completedSheet) throw new Error(`Sheet tab not found: ${CONFIG.COMPLETED_SHEET_NAME}`);
 
-  let appended = 0;
-  let skipped = 0;
+    const completedNameIndex = buildCompletedNameIndex_(completedSheet);
+    const lastCol = COLUMNS.length;
 
-  for (const thread of threads) {
-    const messages = thread.getMessages().slice(-CONFIG.MAX_MESSAGES_PER_THREAD);
+    let templateRow;
+    try {
+      templateRow = findTemplateRow_(sheet, CONFIG.TEMPLATE_MARKER, CONFIG.TEMPLATE_MARKER_COL);
+    } catch (err) {
+      Logger.log(`ERROR: ${err && err.message ? err.message : err}`);
+      // Optional: also write to Apps Script executions log as an exception
+      console.error(err);
+      return; // IMPORTANT: exit before searching Gmail or marking anything read
+    }
 
-    for (const msg of messages) {
-      // Only process unread messages (query should enforce this, but guard anyway)
-      if (!msg.isUnread()) continue;
+    let insertAfterRow;
+    try {
+      insertAfterRow = findTemplateRow_(sheet, CONFIG.INSERT_MARKER, CONFIG.INSERT_MARKER_COL);
+    } catch (err) {
+      Logger.log(`ERROR: ${err && err.message ? err.message : err}`);
+      console.error(err);
+      return; // IMPORTANT: exit before marking anything read
+    }
 
-      const subject = (msg.getSubject() || '').trim();
-      if (!subject.startsWith('Intake Form -')) {
-  skipped++;
-  Logger.log(`SKIP(subject): subj="${subject}" msgId=${msg.getId()}`);
-  continue;
-}
+    let appended = 0;
+    let skipped = 0;
 
-      const fields = parseIntakeMessage_(msg);
+    for (const thread of threads) {
+      const messages = thread.getMessages().slice(-CONFIG.MAX_MESSAGES_PER_THREAD);
 
-      // Name: prefer "Your Name" field, fallback to subject suffix
-      const nameFromSubject = subject.replace(/^Intake Form\s*-\s*/i, '').trim();
-      const fullName = fields.name || nameFromSubject;
+      for (const msg of messages) {
+        // Only process unread messages (query should enforce this, but guard anyway)
+        if (!msg.isUnread()) continue;
 
-      const nameParts = splitName_(fullName);
-      const priorClient = isPriorClient_(nameParts, completedNameIndex);
-      const addrParts = splitAddressConservative_(fields.address || '');
+        const subject = (msg.getSubject() || '').trim();
+        if (!subject.startsWith('Intake Form -')) {
+          skipped++;
+          Logger.log(`SKIP(subject): subj="${subject}" msgId=${msg.getId()}`);
+          continue;
+        }
 
-      // Require at least a name + one contact method
-      if (!fullName || (!fields.phone && !fields.email)) {
-  skipped++;
-  Logger.log(
-    `SKIP(malformed): subj="${subject}" msgId=${msg.getId()} ` +
-    `fullName="${fullName}" phone="${fields.phone}" email="${fields.email}" ` +
-    `parsedName="${fields.name}" parsedAddress="${fields.address}" parsedDob="${fields.dob}"`
-  );
-  continue;
-}
+        const fields = parseIntakeMessage_(msg);
 
-      // Find the next row to write (append at bottom)
-      sheet.insertRowAfter(insertAfterRow);
-      const newRowIndex = insertAfterRow + 1;
-      insertAfterRow = newRowIndex;
+        // Name: prefer "Your Name" field, fallback to subject suffix
+        const nameFromSubject = subject.replace(/^Intake Form\s*-\s*/i, '').trim();
+        const fullName = fields.name || nameFromSubject;
 
-      // 1) Create the row with template formatting + dropdown validations
-      const templateRange = sheet.getRange(templateRow, 1, 1, lastCol);
-      const destRange = sheet.getRange(newRowIndex, 1, 1, lastCol);
+        const nameParts = splitName_(fullName);
+        const priorClient = isPriorClient_(nameParts, completedNameIndex);
+        const addrParts = splitAddressConservative_(fields.address || '');
 
-      // Copy formatting + data validations (dropdowns), but NOT values
-      templateRange.copyTo(destRange, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
-      templateRange.copyTo(destRange, SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
+        // Require at least a name + one contact method
+        if (!fullName || (!fields.phone && !fields.email)) {
+          skipped++;
+          Logger.log(
+            `SKIP(malformed): subj="${subject}" msgId=${msg.getId()} ` +
+            `fullName="${fullName}" phone="${fields.phone}" email="${fields.email}" ` +
+            `parsedName="${fields.name}" parsedAddress="${fields.address}" parsedDob="${fields.dob}"`
+          );
+          continue;
+        }
 
-      // 2) Build row values in your exact order
-      const contactDate = dateAtNoonInTimeZone_(msg.getDate(), CONFIG.TIMEZONE);
-      const extras = [];
+        // Find the next row to write (append at bottom)
+        sheet.insertRowAfter(insertAfterRow);
+        const newRowIndex = insertAfterRow + 1;
+        insertAfterRow = newRowIndex;
+
+        // 1) Create the row with template formatting + dropdown validations
+        const templateRange = sheet.getRange(templateRow, 1, 1, lastCol);
+        const destRange = sheet.getRange(newRowIndex, 1, 1, lastCol);
+
+        // Copy formatting + data validations (dropdowns), but NOT values
+        templateRange.copyTo(destRange, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+        templateRange.copyTo(destRange, SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
+
+        // 2) Build row values in your exact order
+        const contactDate = dateAtNoonInTimeZone_(msg.getDate(), CONFIG.TIMEZONE);
+        const extras = [];
         if (fields.otherQuestions) extras.push(fields.otherQuestions);
 
-          // Add future extra fields here the same way
-          // e.g. if (fields.county) extras.push(fields.county);
+        // Add future extra fields here the same way
+        // e.g. if (fields.county) extras.push(fields.county);
 
         const prepNotesValue = extras.join(' | ');
 
-      const row = [
-        CONFIG.CONSTANTS.Priority || '',
-        CONFIG.CONSTANTS['Assigned to'] || '',
-        CONFIG.CONSTANTS.Status || '',
-        CONFIG.CONSTANTS['Entered in Main Intake Tab?'] === true ? true :
-        CONFIG.CONSTANTS['Entered in Main Intake Tab?'] === false ? false : '',
-        contactDate,
-        CONFIG.CONSTANTS['Contact Method'] || '',
-        CONFIG.CONSTANTS['Sent Form Link?'] || '',
-        CONFIG.CONSTANTS['Filled out Form?'] || '',
-        '', // Contact Log
-        buildPrepNotes_(fields, priorClient, prepNotesValue), // Prep Notes
-        '', // Eligible Case Notes
-        '', // Ineligible Case Notes
-        '', // Contact Notes
-        '', // Next Court Date
-        nameParts.first,
-        nameParts.last,
-        nameParts.middle,
-        fields.dob || '',
-        fields.phone || '',
-        addrParts.raw,   // Current Address always raw
-        addrParts.city,  // only filled if confident
-        addrParts.state, // only filled if confident
-        addrParts.zip,
-        fields.email || ''
-      ];
+        const row = [
+          CONFIG.CONSTANTS.Priority || '',
+          CONFIG.CONSTANTS['Assigned to'] || '',
+          CONFIG.CONSTANTS.Status || '',
+          CONFIG.CONSTANTS['Entered in Main Intake Tab?'] === true ? true :
+          CONFIG.CONSTANTS['Entered in Main Intake Tab?'] === false ? false : '',
+          contactDate,
+          CONFIG.CONSTANTS['Contact Method'] || '',
+          CONFIG.CONSTANTS['Sent Form Link?'] || '',
+          CONFIG.CONSTANTS['Filled out Form?'] || '',
+          '', // Contact Log
+          buildPrepNotes_(fields, priorClient, prepNotesValue), // Prep Notes
+          '', // Eligible Case Notes
+          '', // Ineligible Case Notes
+          '', // Contact Notes
+          '', // Next Court Date
+          nameParts.first,
+          nameParts.last,
+          nameParts.middle,
+          fields.dob || '',
+          fields.phone || '',
+          addrParts.raw,   // Current Address always raw
+          addrParts.city,  // only filled if confident
+          addrParts.state, // only filled if confident
+          addrParts.zip,
+          fields.email || ''
+        ];
 
-      // 3) Write values
-      destRange.setValues([row]);
+        // 3) Write values
+        destRange.setValues([row]);
 
-      // 4) Mark email as processed by marking it READ only
-      msg.markRead();
+        // 4) Mark email as processed by marking it READ only
+        msg.markRead();
 
-      appended++;
+        appended++;
+      }
     }
-  }
 
-  Logger.log(`Done. Appended=${appended} Skipped=${skipped} Threads=${threads.length}`);
+    Logger.log(`Done. Appended=${appended} Skipped=${skipped} Threads=${threads.length}`);
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function buildCompletedNameIndex_(sheet) {
