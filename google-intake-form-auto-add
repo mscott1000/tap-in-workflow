@@ -16,11 +16,6 @@ const CONFIG = {
 
   // Use Central time explicitly
   TIMEZONE: 'America/Chicago',
-
-  // Only run between these hours (local script timezone)
-  RUN_WINDOW_START_HOUR: 6,   // 6am inclusive
-  RUN_WINDOW_END_HOUR: 18,    // 6pm exclusive
-
   // Constant fields to fill for every ingested row (must match dropdown options exactly)
   CONSTANTS: {
     Priority: 'High',
@@ -60,11 +55,6 @@ const COLUMNS = [
 ];
 
 function runIngest() {
-  if (!withinRunWindow_()) {
-    Logger.log('Outside run window; exiting.');
-    return;
-  }
-
   const sheet = SpreadsheetApp.openById(CONFIG.SHEET_ID).getSheetByName(CONFIG.SHEET_NAME);
   if (!sheet) throw new Error(`Sheet tab not found: ${CONFIG.SHEET_NAME}`);
 
@@ -447,16 +437,6 @@ function splitAddressConservative_(addr) {
 }
 
 /**
- * Time gate: only run within CONFIG RUN_WINDOW_* hours (local script TZ).
- * Trigger can be every 30 minutes; this prevents after-hours processing.
- */
-function withinRunWindow_() {
-  const now = new Date();
-  const hour = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'H'));
-  return hour >= CONFIG.RUN_WINDOW_START_HOUR && hour < CONFIG.RUN_WINDOW_END_HOUR;
-}
-
-/**
  * Parses the plain body for the few stable fields we need.
  */
 function parseIntakeBody_(plain) {
@@ -700,8 +680,8 @@ function toTitleCaseAddressPart_(text) {
     .replace(/\bMt\b(?!\.)/g, 'Mt');
 }
 /**
- * Run once: sets a trigger every 30 minutes.
- * The time window (8–5) is enforced inside runIngest().
+ * Run once: sets a trigger every minute.
+ * Intake processing runs at all times of day.
  */
 function setupTriggerOnce() {
   // Remove existing triggers for runIngest
@@ -712,6 +692,6 @@ function setupTriggerOnce() {
 
   ScriptApp.newTrigger('runIngest')
     .timeBased()
-    .everyMinutes(30)
+    .everyMinutes(1)
     .create();
 }
