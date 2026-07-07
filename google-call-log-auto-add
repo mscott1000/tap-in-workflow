@@ -9,8 +9,12 @@ const VOICE_LOG_CONFIG = {
 
   INSERT_MARKER: '_CALLS_BELOW_THIS_LINE_',
 
-  // Broad unread search, then the script filters only valid Google Voice call/voicemail emails.
-  GMAIL_QUERY: 'is:unread "Google Voice"',
+  // Broad unread searches for Google Voice notifications in Gmail's Primary and Updates inbox tabs,
+  // then the script filters only valid Google Voice call/voicemail emails.
+  GMAIL_QUERIES: [
+    'in:inbox category:primary is:unread "Google Voice"',
+    'in:inbox category:updates is:unread "Google Voice"'
+  ],
 
   MAX_THREADS_PER_RUN: 50,
   MAX_MESSAGES_PER_THREAD: 10,
@@ -57,11 +61,7 @@ function runGoogleVoiceLogIngest() {
   let insertAfterRow = findInsertRowByNamedRange_(sheet);
 
   const lastCol = sheet.getLastColumn();
-  const threads = GmailApp.search(
-    VOICE_LOG_CONFIG.GMAIL_QUERY,
-    0,
-    VOICE_LOG_CONFIG.MAX_THREADS_PER_RUN
-  );
+  const threads = searchGoogleVoiceThreads_();
 
   let appended = 0;
   let skipped = 0;
@@ -138,6 +138,31 @@ function runGoogleVoiceLogIngest() {
   }
 
   Logger.log(`Google Voice ingest done. Appended=${appended} Skipped=${skipped} Threads=${threads.length}`);
+}
+
+
+function searchGoogleVoiceThreads_() {
+  const queries = VOICE_LOG_CONFIG.GMAIL_QUERIES || [VOICE_LOG_CONFIG.GMAIL_QUERY];
+  const seenThreadIds = {};
+  const threads = [];
+
+  for (const query of queries) {
+    const queryThreads = GmailApp.search(
+      query,
+      0,
+      VOICE_LOG_CONFIG.MAX_THREADS_PER_RUN
+    );
+
+    for (const thread of queryThreads) {
+      const threadId = thread.getId();
+      if (seenThreadIds[threadId]) continue;
+
+      seenThreadIds[threadId] = true;
+      threads.push(thread);
+    }
+  }
+
+  return threads.slice(0, VOICE_LOG_CONFIG.MAX_THREADS_PER_RUN);
 }
 
 /**
