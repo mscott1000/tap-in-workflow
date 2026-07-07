@@ -9,12 +9,10 @@ const VOICE_LOG_CONFIG = {
 
   INSERT_MARKER: '_CALLS_BELOW_THIS_LINE_',
 
-  // Broad unread searches for Google Voice notifications in Gmail's Primary and Updates inbox tabs,
-  // then the script filters only valid Google Voice call/voicemail emails.
-  GMAIL_QUERIES: [
-    'in:inbox category:primary is:unread "Google Voice"',
-    'in:inbox category:updates is:unread "Google Voice"'
-  ],
+  // Broad unread searches for Google Voice notifications in Gmail's default inbox tabs,
+  // then the script filters only valid Google Voice call/voicemail emails. Gmail's
+  // default inbox can route call logs to either Primary or Updates, so search both.
+  GMAIL_INBOX_CATEGORIES: ['primary', 'updates'],
 
   MAX_THREADS_PER_RUN: 50,
   MAX_MESSAGES_PER_THREAD: 10,
@@ -131,8 +129,15 @@ function runGoogleVoiceLogIngest() {
 }
 
 
+function buildGoogleVoiceInboxQueries_() {
+  const configuredCategories = VOICE_LOG_CONFIG.GMAIL_INBOX_CATEGORIES || [];
+  const categories = configuredCategories.length ? configuredCategories : ['primary'];
+
+  return categories.map(category => `in:inbox category:${category} is:unread "Google Voice"`);
+}
+
 function searchGoogleVoiceThreads_() {
-  const queries = VOICE_LOG_CONFIG.GMAIL_QUERIES || [VOICE_LOG_CONFIG.GMAIL_QUERY];
+  const queries = buildGoogleVoiceInboxQueries_();
   const seenThreadIds = {};
   const threads = [];
 
