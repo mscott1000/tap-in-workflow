@@ -37,20 +37,9 @@ function runGoogleVoiceLogIngest() {
   const completedSheet = ss.getSheetByName(PHONE_MATCH_CONFIG.COMPLETED_SHEET_NAME);
   if (!completedSheet) throw new Error(`Sheet tab not found: ${PHONE_MATCH_CONFIG.COMPLETED_SHEET_NAME}`);
 
-  const headerMap = buildHeaderMap_(sheet);
-  validateRequiredHeaders_(headerMap, [
-    'Priority',
-    'Status',
-    'Contact Date',
-    'Contact Method',
-    'Sent Form Link?',
-    'Filled out Form?',
-    'Prep Notes',
-    'FN',
-    'LN',
-    'MN',
-    'Phone Number'
-  ]);
+  const requiredHeaders = getRequiredVoiceLogHeaders_();
+  const headerMap = buildHeaderMap_(sheet, requiredHeaders);
+  validateRequiredHeaders_(headerMap, requiredHeaders);
 
   const templateRow = findTemplateRowByMarkerInColumn_(
     sheet,
@@ -262,7 +251,7 @@ function analyzeGoogleVoiceEmail_(msg) {
 }
 
 function voiceRunPriorClientNameMatch_(weeklySheet, completedSheet, rowNumber) {
-  const headerMap = buildHeaderMap_(weeklySheet);
+  const headerMap = buildHeaderMap_(weeklySheet, ['FN', 'LN', 'MN', 'Prep Notes', 'Contact Method']);
 
   const fnCol = headerMap['FN'];
   const lnCol = headerMap['LN'];
@@ -650,9 +639,48 @@ function toTitleCaseName_(s) {
     .replace(/\b([a-z])/g, (m) => m.toUpperCase());
 }
 
-function buildHeaderMap_(sheet) {
+function getRequiredVoiceLogHeaders_() {
+  return [
+    'Priority',
+    'Status',
+    'Contact Date',
+    'Contact Method',
+    'Sent Form Link?',
+    'Filled out Form?',
+    'Prep Notes',
+    'FN',
+    'LN',
+    'MN',
+    'Phone Number'
+  ];
+}
+
+function buildHeaderMap_(sheet, requiredHeaders) {
+  const configuredHeaderMap = buildHeaderMapForRow_(sheet, VOICE_LOG_CONFIG.HEADER_ROW);
+
+  if (!requiredHeaders || requiredHeaders.every(h => configuredHeaderMap[h])) {
+    return configuredHeaderMap;
+  }
+
+  const scanLastRow = Math.min(sheet.getLastRow(), 20);
+  for (let row = 1; row <= scanLastRow; row++) {
+    if (row === VOICE_LOG_CONFIG.HEADER_ROW) continue;
+
+    const candidateMap = buildHeaderMapForRow_(sheet, row);
+    if (requiredHeaders.every(h => candidateMap[h])) {
+      Logger.log(
+        `Voice log headers found on row ${row}; configured HEADER_ROW is ${VOICE_LOG_CONFIG.HEADER_ROW}`
+      );
+      return candidateMap;
+    }
+  }
+
+  return configuredHeaderMap;
+}
+
+function buildHeaderMapForRow_(sheet, rowNumber) {
   const headers = sheet
-    .getRange(VOICE_LOG_CONFIG.HEADER_ROW, 1, 1, sheet.getLastColumn())
+    .getRange(rowNumber, 1, 1, sheet.getLastColumn())
     .getValues()[0]
     .map(h => String(h || '').trim());
 
