@@ -93,7 +93,8 @@ function runGoogleVoiceLogIngest() {
       const priorityValue = analysis.contactMethod === 'voicemail' ? 'Medium' : VOICE_LOG_CONFIG.CONSTANTS.Priority;
 
       // Dropdown-backed fields
-      setDropdownCellByHeader_(sheet, headerMap, newRowIndex, 'Priority', priorityValue);
+      // Priority is optional because some Weekly Call Log sheets no longer include that column.
+      setOptionalDropdownCellByHeader_(sheet, headerMap, newRowIndex, 'Priority', priorityValue);
       setDropdownCellByHeader_(sheet, headerMap, newRowIndex, 'Status', VOICE_LOG_CONFIG.CONSTANTS.Status);
       setDropdownCellByHeader_(sheet, headerMap, newRowIndex, 'Contact Method', analysis.contactMethod);
       setDropdownCellByHeader_(sheet, headerMap, newRowIndex, 'Sent Form Link?', VOICE_LOG_CONFIG.CONSTANTS['Sent Form Link?']);
@@ -641,7 +642,6 @@ function toTitleCaseName_(s) {
 
 function getRequiredVoiceLogHeaders_() {
   return [
-    'Priority',
     'Status',
     'Contact Date',
     'Contact Method',
@@ -703,6 +703,16 @@ function setCellByHeader_(sheet, headerMap, rowIndex, headerName, value) {
   const col = headerMap[headerName];
   if (!col) throw new Error(`Header not found: ${headerName}`);
   sheet.getRange(rowIndex, col).setValue(value);
+}
+
+function setOptionalDropdownCellByHeader_(sheet, headerMap, rowIndex, headerName, value) {
+  const col = headerMap[headerName];
+  if (!col) {
+    Logger.log(`Optional header not found; skipping ${headerName}`);
+    return;
+  }
+
+  setDropdownCellByHeader_(sheet, headerMap, rowIndex, headerName, value);
 }
 
 function findTemplateRowByMarkerInColumn_(sheet, marker, colIndex) {
