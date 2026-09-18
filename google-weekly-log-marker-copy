@@ -29,10 +29,19 @@ const WEEKLY_MARKER_COPY_CONFIG = {
     { sourceCol: 24, destCol: 20 }  // X -> T   Email
   ],
 
+  // Cells that should be copied like normal Ctrl+C -> Ctrl+V,
+  // preserving formatting, notes, validation, etc.
+  //
+  // Source L is intentionally NOT included.
+  FULL_COPY_COLUMNS: [
+    { sourceCol: 11, destCol: 11 } // K -> K
+  ],
+
   LIBRARY_FORM_SOURCE_VALUE: 'Library form', // H
   LIBRARY_FORM_DEST_COL: 12, // L (Online Form)
   LIBRARY_FORM_DEST_VALUE: 'Yes'
 };
+
 
 /**
  * Adds a custom menu as a backup way to run the copy queue.
@@ -45,6 +54,7 @@ function onOpen() {
     .addToUi();
 }
 
+
 /**
  * Main function for the custom button / drawing.
  * Assign this exact function name to the drawing:
@@ -52,6 +62,7 @@ function onOpen() {
  */
 function runWeeklyMarkerCopyQueue() {
   const lock = LockService.getDocumentLock();
+
   if (!lock.tryLock(30000)) {
     SpreadsheetApp.getActiveSpreadsheet().toast(
       'Could not acquire lock. Another copy run may already be in progress.',
@@ -63,9 +74,15 @@ function runWeeklyMarkerCopyQueue() {
 
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sourceSheet = ss.getSheetByName(WEEKLY_MARKER_COPY_CONFIG.SOURCE_SHEET_NAME);
+
+    const sourceSheet = ss.getSheetByName(
+      WEEKLY_MARKER_COPY_CONFIG.SOURCE_SHEET_NAME
+    );
+
     if (!sourceSheet) {
-      throw new Error(`Sheet not found: ${WEEKLY_MARKER_COPY_CONFIG.SOURCE_SHEET_NAME}`);
+      throw new Error(
+        `Sheet not found: ${WEEKLY_MARKER_COPY_CONFIG.SOURCE_SHEET_NAME}`
+      );
     }
 
     const summary = processWeeklyMarkerQueue_(sourceSheet);
@@ -75,10 +92,12 @@ function runWeeklyMarkerCopyQueue() {
       'Marker Copy',
       10
     );
+
   } finally {
     lock.releaseLock();
   }
 }
+
 
 /**
  * Optional helper:
@@ -89,7 +108,10 @@ function markSelectedRowsQueued() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getActiveSheet();
 
-  if (sheet.getName() !== WEEKLY_MARKER_COPY_CONFIG.SOURCE_SHEET_NAME) {
+  if (
+    sheet.getName() !==
+    WEEKLY_MARKER_COPY_CONFIG.SOURCE_SHEET_NAME
+  ) {
     SpreadsheetApp.getActiveSpreadsheet().toast(
       `Open "${WEEKLY_MARKER_COPY_CONFIG.SOURCE_SHEET_NAME}" before using this.`,
       'Marker Copy',
@@ -103,74 +125,169 @@ function markSelectedRowsQueued() {
 
   const startRow = range.getRow();
   const numRows = range.getNumRows();
-  if (startRow <= WEEKLY_MARKER_COPY_CONFIG.HEADER_ROW) return;
 
-  const rowCount = Math.max(0, startRow + numRows - 1 - WEEKLY_MARKER_COPY_CONFIG.HEADER_ROW);
+  if (startRow <= WEEKLY_MARKER_COPY_CONFIG.HEADER_ROW) {
+    return;
+  }
+
+  const rowCount = Math.max(
+    0,
+    startRow +
+      numRows -
+      1 -
+      WEEKLY_MARKER_COPY_CONFIG.HEADER_ROW
+  );
+
   if (!rowCount) return;
 
-  const firstDataRow = Math.max(startRow, WEEKLY_MARKER_COPY_CONFIG.HEADER_ROW + 1);
-  const values = Array.from({ length: (startRow + numRows - firstDataRow) + 1 }, () => [WEEKLY_MARKER_COPY_CONFIG.STATUS_QUEUED]);
+  const firstDataRow = Math.max(
+    startRow,
+    WEEKLY_MARKER_COPY_CONFIG.HEADER_ROW + 1
+  );
 
-  sheet.getRange(firstDataRow, WEEKLY_MARKER_COPY_CONFIG.STATUS_COLUMN, values.length, 1).setValues(values);
+  const values = Array.from(
+    {
+      length:
+        startRow +
+        numRows -
+        firstDataRow
+    },
+    () => [WEEKLY_MARKER_COPY_CONFIG.STATUS_QUEUED]
+  );
 
-  ss.toast(`Marked ${values.length} row(s) as QUEUED.`, 'Marker Copy', 5);
+  sheet
+    .getRange(
+      firstDataRow,
+      WEEKLY_MARKER_COPY_CONFIG.STATUS_COLUMN,
+      values.length,
+      1
+    )
+    .setValues(values);
+
+  ss.toast(
+    `Marked ${values.length} row(s) as QUEUED.`,
+    'Marker Copy',
+    5
+  );
 }
+
 
 /**
  * Optional manual runner for one row.
  */
 function copyWeeklyMarkerRowManually(rowNumber) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sourceSheet = ss.getSheetByName(WEEKLY_MARKER_COPY_CONFIG.SOURCE_SHEET_NAME);
-  if (!sourceSheet) throw new Error(`Sheet not found: ${WEEKLY_MARKER_COPY_CONFIG.SOURCE_SHEET_NAME}`);
 
-  const result = processSingleWeeklyMarkerRow_(sourceSheet, rowNumber, true);
-  SpreadsheetApp.getActiveSpreadsheet().toast(result.status, 'Marker Copy', 8);
+  const sourceSheet = ss.getSheetByName(
+    WEEKLY_MARKER_COPY_CONFIG.SOURCE_SHEET_NAME
+  );
+
+  if (!sourceSheet) {
+    throw new Error(
+      `Sheet not found: ${WEEKLY_MARKER_COPY_CONFIG.SOURCE_SHEET_NAME}`
+    );
+  }
+
+  const result = processSingleWeeklyMarkerRow_(
+    sourceSheet,
+    rowNumber,
+    true
+  );
+
+  SpreadsheetApp.getActiveSpreadsheet().toast(
+    result.status,
+    'Marker Copy',
+    8
+  );
 }
+
 
 function processWeeklyMarkerQueue_(sourceSheet) {
   const lastRow = sourceSheet.getLastRow();
-  const firstDataRow = WEEKLY_MARKER_COPY_CONFIG.HEADER_ROW + 1;
+
+  const firstDataRow =
+    WEEKLY_MARKER_COPY_CONFIG.HEADER_ROW + 1;
 
   if (lastRow < firstDataRow) {
-    return { done: 0, skipped: 0, errors: 0 };
+    return {
+      done: 0,
+      skipped: 0,
+      errors: 0
+    };
   }
 
-  const numRows = lastRow - firstDataRow + 1;
+  const numRows =
+    lastRow -
+    firstDataRow +
+    1;
 
-  // Read H:AH in one batch:
-  // H:K   = conditional/memo fields for intake notes + online form flag
-  // O:X   = source values we copy
-  // AG    = marker
-  // AH    = status
+  /*
+   * Read H:AH in one batch:
+   *
+   * H:K = conditional/memo fields
+   *       for intake notes + online form flag
+   *
+   * O:X = source values we copy
+   *
+   * AG = marker
+   * AH = status
+   */
   const readStartCol = 8;  // H
   const readEndCol = 34;   // AH
-  const readWidth = readEndCol - readStartCol + 1;
+
+  const readWidth =
+    readEndCol -
+    readStartCol +
+    1;
 
   const allRows = sourceSheet
-    .getRange(firstDataRow, readStartCol, numRows, readWidth)
+    .getRange(
+      firstDataRow,
+      readStartCol,
+      numRows,
+      readWidth
+    )
     .getValues();
 
   const statusesToWrite = [];
+
   let done = 0;
   let skipped = 0;
   let errors = 0;
 
   for (let i = 0; i < allRows.length; i++) {
-    const sheetRow = firstDataRow + i;
-    const rowValues = allRows[i];
+    const sheetRow =
+      firstDataRow + i;
 
-    const marker = String(rowValues[WEEKLY_MARKER_COPY_CONFIG.MARKER_COLUMN - readStartCol] || '').trim();
-    const status = String(rowValues[WEEKLY_MARKER_COPY_CONFIG.STATUS_COLUMN - readStartCol] || '').trim();
+    const rowValues =
+      allRows[i];
+
+    const marker = String(
+      rowValues[
+        WEEKLY_MARKER_COPY_CONFIG.MARKER_COLUMN -
+        readStartCol
+      ] || ''
+    ).trim();
+
+    const status = String(
+      rowValues[
+        WEEKLY_MARKER_COPY_CONFIG.STATUS_COLUMN -
+        readStartCol
+      ] || ''
+    ).trim();
 
     const shouldRun =
       marker &&
       parseWeeklyMarker_(marker) &&
       (
         status === '' ||
-        status.toUpperCase() === WEEKLY_MARKER_COPY_CONFIG.STATUS_QUEUED ||
-        status.toUpperCase() === WEEKLY_MARKER_COPY_CONFIG.STATUS_RETRY ||
-        status.toUpperCase().indexOf('ERROR:') === 0
+        status.toUpperCase() ===
+          WEEKLY_MARKER_COPY_CONFIG.STATUS_QUEUED ||
+        status.toUpperCase() ===
+          WEEKLY_MARKER_COPY_CONFIG.STATUS_RETRY ||
+        status
+          .toUpperCase()
+          .indexOf('ERROR:') === 0
       );
 
     if (!shouldRun) {
@@ -179,8 +296,18 @@ function processWeeklyMarkerQueue_(sourceSheet) {
       continue;
     }
 
-    const result = processSingleWeeklyMarkerRow_(sourceSheet, sheetRow, false, rowValues, readStartCol);
-    statusesToWrite.push([result.status]);
+    const result =
+      processSingleWeeklyMarkerRow_(
+        sourceSheet,
+        sheetRow,
+        false,
+        rowValues,
+        readStartCol
+      );
+
+    statusesToWrite.push([
+      result.status
+    ]);
 
     if (result.ok) {
       done++;
@@ -191,68 +318,187 @@ function processWeeklyMarkerQueue_(sourceSheet) {
 
   // Write all AH statuses back in one batch.
   sourceSheet
-    .getRange(firstDataRow, WEEKLY_MARKER_COPY_CONFIG.STATUS_COLUMN, statusesToWrite.length, 1)
+    .getRange(
+      firstDataRow,
+      WEEKLY_MARKER_COPY_CONFIG.STATUS_COLUMN,
+      statusesToWrite.length,
+      1
+    )
     .setValues(statusesToWrite);
 
-  return { done, skipped, errors };
+  return {
+    done,
+    skipped,
+    errors
+  };
 }
 
-function processSingleWeeklyMarkerRow_(sourceSheet, sourceRow, throwOnError, cachedRowValues, cachedRowStartCol) {
+
+function processSingleWeeklyMarkerRow_(
+  sourceSheet,
+  sourceRow,
+  throwOnError,
+  cachedRowValues,
+  cachedRowStartCol
+) {
   try {
-    const markerText = getMarkerText_(sourceSheet, sourceRow, cachedRowValues, cachedRowStartCol);
+    const markerText =
+      getMarkerText_(
+        sourceSheet,
+        sourceRow,
+        cachedRowValues,
+        cachedRowStartCol
+      );
+
     if (!markerText) {
-      return { ok: false, status: '' };
+      return {
+        ok: false,
+        status: ''
+      };
     }
 
-    const parsed = parseWeeklyMarker_(markerText);
+    const parsed =
+      parseWeeklyMarker_(markerText);
+
     if (!parsed) {
-      return { ok: false, status: 'ERROR: invalid marker format' };
+      return {
+        ok: false,
+        status:
+          'ERROR: invalid marker format'
+      };
     }
 
-    const ss = sourceSheet.getParent();
-    const destSheet = ss.getSheetByName(parsed.destinationTabName);
+    const ss =
+      sourceSheet.getParent();
+
+    const destSheet =
+      ss.getSheetByName(
+        parsed.destinationTabName
+      );
+
     if (!destSheet) {
-      const msg = `Destination sheet not found: ${parsed.destinationTabName}`;
-      if (throwOnError) throw new Error(msg);
-      return { ok: false, status: `ERROR: ${msg}` };
+      const msg =
+        `Destination sheet not found: ${parsed.destinationTabName}`;
+
+      if (throwOnError) {
+        throw new Error(msg);
+      }
+
+      return {
+        ok: false,
+        status: `ERROR: ${msg}`
+      };
     }
 
-    const payload = buildWeeklyMarkerPayload_(sourceSheet, sourceRow, cachedRowValues, cachedRowStartCol);
-    const targetRows = findClearDestinationRows_(destSheet, parsed.startRow, parsed.copyCount);
+    const payload =
+      buildWeeklyMarkerPayload_(
+        sourceSheet,
+        sourceRow,
+        cachedRowValues,
+        cachedRowStartCol
+      );
 
-    writeWeeklyMarkerPayloads_(destSheet, targetRows, payload);
+    const targetRows =
+      findClearDestinationRows_(
+        destSheet,
+        parsed.startRow,
+        parsed.copyCount
+      );
 
-    return { ok: true, status: WEEKLY_MARKER_COPY_CONFIG.STATUS_DONE };
+    /*
+     * Pass sourceSheet and sourceRow so K can be
+     * copied as the full original cell rather than
+     * only copying its value.
+     */
+    writeWeeklyMarkerPayloads_(
+      sourceSheet,
+      sourceRow,
+      destSheet,
+      targetRows,
+      payload
+    );
+
+    return {
+      ok: true,
+      status:
+        WEEKLY_MARKER_COPY_CONFIG.STATUS_DONE
+    };
+
   } catch (err) {
-    if (throwOnError) throw err;
+    if (throwOnError) {
+      throw err;
+    }
+
     return {
       ok: false,
-      status: `ERROR: ${err && err.message ? err.message : err}`
+      status:
+        `ERROR: ${
+          err && err.message
+            ? err.message
+            : err
+        }`
     };
   }
 }
 
-function getMarkerText_(sourceSheet, sourceRow, cachedRowValues, cachedRowStartCol) {
-  if (cachedRowValues && cachedRowStartCol != null) {
+
+function getMarkerText_(
+  sourceSheet,
+  sourceRow,
+  cachedRowValues,
+  cachedRowStartCol
+) {
+  if (
+    cachedRowValues &&
+    cachedRowStartCol != null
+  ) {
     return String(
-      cachedRowValues[WEEKLY_MARKER_COPY_CONFIG.MARKER_COLUMN - cachedRowStartCol] || ''
+      cachedRowValues[
+        WEEKLY_MARKER_COPY_CONFIG.MARKER_COLUMN -
+        cachedRowStartCol
+      ] || ''
     ).trim();
   }
 
   return String(
-    sourceSheet.getRange(sourceRow, WEEKLY_MARKER_COPY_CONFIG.MARKER_COLUMN).getValue() || ''
+    sourceSheet
+      .getRange(
+        sourceRow,
+        WEEKLY_MARKER_COPY_CONFIG.MARKER_COLUMN
+      )
+      .getValue() || ''
   ).trim();
 }
 
+
 function parseWeeklyMarker_(markerText) {
-  const m = String(markerText || '').match(WEEKLY_MARKER_COPY_CONFIG.MARKER_REGEX);
+  const m = String(
+    markerText || ''
+  ).match(
+    WEEKLY_MARKER_COPY_CONFIG.MARKER_REGEX
+  );
+
   if (!m) return null;
 
-  const startRow = Number(m[2]);
-  const copyCount = Number(m[3]);
+  const startRow =
+    Number(m[2]);
 
-  if (!startRow || startRow < 1) return null;
-  if (!copyCount || copyCount < 1) return null;
+  const copyCount =
+    Number(m[3]);
+
+  if (
+    !startRow ||
+    startRow < 1
+  ) {
+    return null;
+  }
+
+  if (
+    !copyCount ||
+    copyCount < 1
+  ) {
+    return null;
+  }
 
   return {
     destinationTabName: m[1],
@@ -261,141 +507,469 @@ function parseWeeklyMarker_(markerText) {
   };
 }
 
-function buildWeeklyMarkerPayload_(sourceSheet, sourceRow, cachedRowValues, cachedRowStartCol) {
+
+function buildWeeklyMarkerPayload_(
+  sourceSheet,
+  sourceRow,
+  cachedRowValues,
+  cachedRowStartCol
+) {
   const payload = {};
 
-  if (cachedRowValues && cachedRowStartCol != null) {
-    WEEKLY_MARKER_COPY_CONFIG.COLUMN_MAP.forEach(map => {
-      payload[map.destCol] = cachedRowValues[map.sourceCol - cachedRowStartCol];
-    });
+  /*
+   * Fast path:
+   * use values already read by
+   * processWeeklyMarkerQueue_().
+   */
+  if (
+    cachedRowValues &&
+    cachedRowStartCol != null
+  ) {
+    WEEKLY_MARKER_COPY_CONFIG
+      .COLUMN_MAP
+      .forEach(map => {
+        payload[map.destCol] =
+          cachedRowValues[
+            map.sourceCol -
+            cachedRowStartCol
+          ];
+      });
 
-    const formValue = String(cachedRowValues[8 - cachedRowStartCol] || '').trim(); // H
-    if (formValue === WEEKLY_MARKER_COPY_CONFIG.LIBRARY_FORM_SOURCE_VALUE) {
-      payload[WEEKLY_MARKER_COPY_CONFIG.LIBRARY_FORM_DEST_COL] = WEEKLY_MARKER_COPY_CONFIG.LIBRARY_FORM_DEST_VALUE;
+    /*
+     * Existing Online Form rule:
+     *
+     * If source H says "Library form",
+     * destination L becomes "Yes".
+     *
+     * Source L itself is NOT copied.
+     */
+    const formValue = String(
+      cachedRowValues[
+        8 -
+        cachedRowStartCol
+      ] || ''
+    ).trim();
+
+    if (
+      formValue ===
+      WEEKLY_MARKER_COPY_CONFIG
+        .LIBRARY_FORM_SOURCE_VALUE
+    ) {
+      payload[
+        WEEKLY_MARKER_COPY_CONFIG
+          .LIBRARY_FORM_DEST_COL
+      ] =
+        WEEKLY_MARKER_COPY_CONFIG
+          .LIBRARY_FORM_DEST_VALUE;
     }
 
     return payload;
   }
 
-  const sourceCols = WEEKLY_MARKER_COPY_CONFIG.COLUMN_MAP.map(m => m.sourceCol);
-  const minSourceCol = Math.min.apply(null, sourceCols);
-  const maxSourceCol = Math.max.apply(null, sourceCols);
+  /*
+   * Manual/single-row path.
+   */
+  const sourceCols =
+    WEEKLY_MARKER_COPY_CONFIG
+      .COLUMN_MAP
+      .map(m => m.sourceCol);
 
-  const rowValues = sourceSheet
-    .getRange(sourceRow, minSourceCol, 1, maxSourceCol - minSourceCol + 1)
-    .getValues()[0];
+  const minSourceCol =
+    Math.min.apply(
+      null,
+      sourceCols
+    );
 
-  WEEKLY_MARKER_COPY_CONFIG.COLUMN_MAP.forEach(map => {
-    payload[map.destCol] = rowValues[map.sourceCol - minSourceCol];
-  });
+  const maxSourceCol =
+    Math.max.apply(
+      null,
+      sourceCols
+    );
 
-  const formValue = String(sourceSheet.getRange(sourceRow, 8).getValue() || '').trim(); // H
-  if (formValue === WEEKLY_MARKER_COPY_CONFIG.LIBRARY_FORM_SOURCE_VALUE) {
-    payload[WEEKLY_MARKER_COPY_CONFIG.LIBRARY_FORM_DEST_COL] = WEEKLY_MARKER_COPY_CONFIG.LIBRARY_FORM_DEST_VALUE;
+  const rowValues =
+    sourceSheet
+      .getRange(
+        sourceRow,
+        minSourceCol,
+        1,
+        maxSourceCol -
+          minSourceCol +
+          1
+      )
+      .getValues()[0];
+
+  WEEKLY_MARKER_COPY_CONFIG
+    .COLUMN_MAP
+    .forEach(map => {
+      payload[map.destCol] =
+        rowValues[
+          map.sourceCol -
+          minSourceCol
+        ];
+    });
+
+  /*
+   * Existing Online Form rule.
+   */
+  const formValue =
+    String(
+      sourceSheet
+        .getRange(
+          sourceRow,
+          8
+        )
+        .getValue() || ''
+    ).trim();
+
+  if (
+    formValue ===
+    WEEKLY_MARKER_COPY_CONFIG
+      .LIBRARY_FORM_SOURCE_VALUE
+  ) {
+    payload[
+      WEEKLY_MARKER_COPY_CONFIG
+        .LIBRARY_FORM_DEST_COL
+    ] =
+      WEEKLY_MARKER_COPY_CONFIG
+        .LIBRARY_FORM_DEST_VALUE;
   }
 
   return payload;
 }
 
+
 /**
  * Finds N clear rows at or below startRow.
- * A row is clear only if every destination-mapped column is blank.
- * Adds rows to the destination sheet if necessary.
+ *
+ * A row is clear only if every
+ * destination-mapped column is blank.
+ *
+ * Adds rows to the destination sheet
+ * if necessary.
  */
-function findClearDestinationRows_(sheet, startRow, neededCount) {
+function findClearDestinationRows_(
+  sheet,
+  startRow,
+  neededCount
+) {
   const CHUNK_SIZE = 200;
 
-  const destCols = WEEKLY_MARKER_COPY_CONFIG.COLUMN_MAP.map(m => m.destCol);
-  const minDestCol = Math.min.apply(null, destCols);
-  const maxDestCol = Math.max.apply(null, destCols);
-  const width = maxDestCol - minDestCol + 1;
-  const offsets = destCols.map(col => col - minDestCol);
+  /*
+   * K is already part of COLUMN_MAP,
+   * so no special modification is
+   * necessary here.
+   *
+   * Destination L retains its previous
+   * behavior and is not added to the
+   * clear-row test.
+   */
+  const destCols =
+    WEEKLY_MARKER_COPY_CONFIG
+      .COLUMN_MAP
+      .map(m => m.destCol);
 
-  let nextRow = Math.max(1, Number(startRow) || 1);
-  let maxRows = sheet.getMaxRows();
+  const minDestCol =
+    Math.min.apply(
+      null,
+      destCols
+    );
+
+  const maxDestCol =
+    Math.max.apply(
+      null,
+      destCols
+    );
+
+  const width =
+    maxDestCol -
+    minDestCol +
+    1;
+
+  const offsets =
+    destCols.map(
+      col =>
+        col -
+        minDestCol
+    );
+
+  let nextRow =
+    Math.max(
+      1,
+      Number(startRow) || 1
+    );
+
+  let maxRows =
+    sheet.getMaxRows();
+
   const clearRows = [];
 
   if (nextRow > maxRows) {
-    const rowsToAdd = (nextRow - maxRows) + Math.max(neededCount, 20);
-    sheet.insertRowsAfter(maxRows, rowsToAdd);
-    maxRows = sheet.getMaxRows();
+    const rowsToAdd =
+      (nextRow - maxRows) +
+      Math.max(
+        neededCount,
+        20
+      );
+
+    sheet.insertRowsAfter(
+      maxRows,
+      rowsToAdd
+    );
+
+    maxRows =
+      sheet.getMaxRows();
   }
 
-  while (clearRows.length < neededCount) {
+  while (
+    clearRows.length <
+    neededCount
+  ) {
     if (nextRow > maxRows) {
-      const rowsToAdd = Math.max(neededCount - clearRows.length, 20);
-      sheet.insertRowsAfter(maxRows, rowsToAdd);
-      maxRows = sheet.getMaxRows();
+      const rowsToAdd =
+        Math.max(
+          neededCount -
+            clearRows.length,
+          20
+        );
+
+      sheet.insertRowsAfter(
+        maxRows,
+        rowsToAdd
+      );
+
+      maxRows =
+        sheet.getMaxRows();
     }
 
-    const rowsToRead = Math.min(CHUNK_SIZE, maxRows - nextRow + 1);
-    const block = sheet.getRange(nextRow, minDestCol, rowsToRead, width).getDisplayValues();
+    const rowsToRead =
+      Math.min(
+        CHUNK_SIZE,
+        maxRows -
+          nextRow +
+          1
+      );
 
-    for (let i = 0; i < block.length; i++) {
-      const rowValues = block[i];
-      const isClear = offsets.every(offset => String(rowValues[offset] || '').trim() === '');
+    const block =
+      sheet
+        .getRange(
+          nextRow,
+          minDestCol,
+          rowsToRead,
+          width
+        )
+        .getDisplayValues();
+
+    for (
+      let i = 0;
+      i < block.length;
+      i++
+    ) {
+      const rowValues =
+        block[i];
+
+      const isClear =
+        offsets.every(
+          offset =>
+            String(
+              rowValues[offset] ||
+              ''
+            ).trim() === ''
+        );
 
       if (isClear) {
-        clearRows.push(nextRow + i);
-        if (clearRows.length >= neededCount) break;
+        clearRows.push(
+          nextRow + i
+        );
+
+        if (
+          clearRows.length >=
+          neededCount
+        ) {
+          break;
+        }
       }
     }
 
-    nextRow += rowsToRead;
+    nextRow +=
+      rowsToRead;
   }
 
   return clearRows;
 }
 
+
 /**
  * Writes one payload into each target row.
- * Uses contiguous destination groups so unrelated columns are not overwritten.
+ *
+ * Ordinary mapped fields are written
+ * as values, exactly as before.
+ *
+ * K -> K is then copied as a complete
+ * cell using copyTo(), preserving:
+ *
+ * - value
+ * - formatting
+ * - notes
+ * - data validation
+ * - other normal cell properties
+ *
+ * Source L is not copied.
  */
-function writeWeeklyMarkerPayloads_(destSheet, targetRows, payload) {
-  const groups = buildDestinationWriteGroups_(payload);
-  if (!groups.length || !targetRows.length) return;
+function writeWeeklyMarkerPayloads_(
+  sourceSheet,
+  sourceRow,
+  destSheet,
+  targetRows,
+  payload
+) {
+  const groups =
+    buildDestinationWriteGroups_(
+      payload
+    );
+
+  if (!targetRows.length) {
+    return;
+  }
 
   targetRows.forEach(row => {
+
+    /*
+     * First perform all of the
+     * existing value-based writes.
+     */
     groups.forEach(group => {
-      destSheet.getRange(row, group.startCol, 1, group.values.length).setValues([group.values]);
+      destSheet
+        .getRange(
+          row,
+          group.startCol,
+          1,
+          group.values.length
+        )
+        .setValues([
+          group.values
+        ]);
     });
+
+    /*
+     * Then overwrite designated
+     * full-copy cells with a real
+     * cell-to-cell copy.
+     *
+     * Currently this is ONLY:
+     *
+     * source K -> destination K
+     */
+    WEEKLY_MARKER_COPY_CONFIG
+      .FULL_COPY_COLUMNS
+      .forEach(map => {
+
+        const sourceCell =
+          sourceSheet.getRange(
+            sourceRow,
+            map.sourceCol
+          );
+
+        const destinationCell =
+          destSheet.getRange(
+            row,
+            map.destCol
+          );
+
+        /*
+         * Equivalent conceptually to:
+         *
+         * Ctrl+C
+         * Ctrl+V
+         *
+         * rather than paste-values-only.
+         */
+        sourceCell.copyTo(
+          destinationCell
+        );
+      });
   });
 }
 
-function buildDestinationWriteGroups_(payload) {
-  const destCols = Object.keys(payload).map(Number).sort((a, b) => a - b);
-  if (!destCols.length) return [];
+
+function buildDestinationWriteGroups_(
+  payload
+) {
+  const destCols =
+    Object.keys(payload)
+      .map(Number)
+      .sort(
+        (a, b) =>
+          a - b
+      );
+
+  if (!destCols.length) {
+    return [];
+  }
 
   const groups = [];
+
   let current = {
-    startCol: destCols[0],
-    lastCol: destCols[0],
-    values: [payload[destCols[0]]]
+    startCol:
+      destCols[0],
+
+    lastCol:
+      destCols[0],
+
+    values: [
+      payload[
+        destCols[0]
+      ]
+    ]
   };
 
-  for (let i = 1; i < destCols.length; i++) {
-    const col = destCols[i];
+  for (
+    let i = 1;
+    i < destCols.length;
+    i++
+  ) {
+    const col =
+      destCols[i];
 
-    if (col === current.lastCol + 1) {
-      current.values.push(payload[col]);
-      current.lastCol = col;
+    if (
+      col ===
+      current.lastCol + 1
+    ) {
+      current.values.push(
+        payload[col]
+      );
+
+      current.lastCol =
+        col;
+
     } else {
       groups.push({
-        startCol: current.startCol,
-        values: current.values
+        startCol:
+          current.startCol,
+
+        values:
+          current.values
       });
 
       current = {
-        startCol: col,
-        lastCol: col,
-        values: [payload[col]]
+        startCol:
+          col,
+
+        lastCol:
+          col,
+
+        values: [
+          payload[col]
+        ]
       };
     }
   }
 
   groups.push({
-    startCol: current.startCol,
-    values: current.values
+    startCol:
+      current.startCol,
+
+    values:
+      current.values
   });
 
   return groups;
