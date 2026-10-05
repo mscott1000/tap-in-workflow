@@ -25,7 +25,7 @@ const CONFIG = {
     'Entered in Main Intake Tab?': false,
     'Contact Method': 'Library form',
     'Sent Form Link?': 'No',
-    'Filled out Form?': 'Library form'
+    'Filled out Form?': 'Yes'
   }
 };
 
