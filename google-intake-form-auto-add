@@ -4,10 +4,10 @@ const CONFIG = {
   COMPLETED_SHEET_NAME: '2020-2025',
 
   TEMPLATE_MARKER: '__TEMPLATE__',
-  TEMPLATE_MARKER_COL: 47,
+  TEMPLATE_MARKER_COL: 46, // AT after Contact Notes (M) is deleted
 
   INSERT_MARKER: '__INSERT_HERE__',
-  INSERT_MARKER_COL: 47,
+  INSERT_MARKER_COL: 46, // AT after Contact Notes (M) is deleted
 
   GMAIL_QUERY: 'is:unread subject:"Intake Form -" newer_than:3d',
 
@@ -42,7 +42,6 @@ const COLUMNS = [
   'Prep Notes',
   'Eligible Case Notes',
   'Ineligible Case Notes',
-  'Contact Notes',
   'Next Court Date',
   'FN',
   'LN',
@@ -174,7 +173,6 @@ function runIngest() {
           buildPrepNotes_(fields, priorClient, prepNotesValue), // Prep Notes
           '', // Eligible Case Notes
           '', // Ineligible Case Notes
-          '', // Contact Notes
           '', // Next Court Date
           nameParts.first,
           nameParts.last,

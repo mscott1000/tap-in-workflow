@@ -1,8 +1,8 @@
 const WEEKLY_MARKER_COPY_CONFIG = {
   SOURCE_SHEET_NAME: 'Weekly Call Log',
   HEADER_ROW: 1,
-  MARKER_COLUMN: 33, // AG
-  STATUS_COLUMN: 34, // AH
+  MARKER_COLUMN: 32, // AF after Contact Notes (M) is deleted
+  STATUS_COLUMN: 33, // AG after Contact Notes (M) is deleted
 
   // Marker format example:
   // "Intake 2026_April 7" "28" "6"
@@ -17,16 +17,16 @@ const WEEKLY_MARKER_COPY_CONFIG = {
   COLUMN_MAP: [
     { sourceCol: 10, destCol: 27 }, // J -> AA  Notes (Prep Notes)
     { sourceCol: 11, destCol: 11 }, // K -> K   Intake Notes (Eligible Case Notes)
-    { sourceCol: 15, destCol: 5 },  // O -> E   First Name
-    { sourceCol: 16, destCol: 6 },  // P -> F   Last Name
-    { sourceCol: 17, destCol: 7 },  // Q -> G   Middle Name
-    { sourceCol: 18, destCol: 8 },  // R -> H   Date of Birth
-    { sourceCol: 19, destCol: 9 },  // S -> I   Phone Number
-    { sourceCol: 20, destCol: 16 }, // T -> P   Address
-    { sourceCol: 21, destCol: 17 }, // U -> Q   City
-    { sourceCol: 22, destCol: 18 }, // V -> R   State
-    { sourceCol: 23, destCol: 19 }, // W -> S   Zip
-    { sourceCol: 24, destCol: 20 }  // X -> T   Email
+    { sourceCol: 14, destCol: 5 },  // N -> E   First Name
+    { sourceCol: 15, destCol: 6 },  // O -> F   Last Name
+    { sourceCol: 16, destCol: 7 },  // P -> G   Middle Name
+    { sourceCol: 17, destCol: 8 },  // Q -> H   Date of Birth
+    { sourceCol: 18, destCol: 9 },  // R -> I   Phone Number
+    { sourceCol: 19, destCol: 16 }, // S -> P   Address
+    { sourceCol: 20, destCol: 17 }, // T -> Q   City
+    { sourceCol: 21, destCol: 18 }, // U -> R   State
+    { sourceCol: 22, destCol: 19 }, // V -> S   Zip
+    { sourceCol: 23, destCol: 20 }  // W -> T   Email
   ],
 
   // Cells that should be copied like normal Ctrl+C -> Ctrl+V,
@@ -101,7 +101,7 @@ function runWeeklyMarkerCopyQueue() {
 
 /**
  * Optional helper:
- * Marks the currently selected source rows as QUEUED in AH.
+ * Marks the currently selected source rows as QUEUED in AG.
  * Useful if you want to rerun rows that were DONE or ERROR.
  */
 function markSelectedRowsQueued() {
@@ -222,18 +222,18 @@ function processWeeklyMarkerQueue_(sourceSheet) {
     1;
 
   /*
-   * Read H:AH in one batch:
+   * Read H:AG in one batch:
    *
    * H:K = conditional/memo fields
    *       for intake notes + online form flag
    *
-   * O:X = source values we copy
+   * N:W = source values we copy
    *
-   * AG = marker
-   * AH = status
+   * AF = marker
+   * AG = status
    */
   const readStartCol = 8;  // H
-  const readEndCol = 34;   // AH
+  const readEndCol = WEEKLY_MARKER_COPY_CONFIG.STATUS_COLUMN; // AG
 
   const readWidth =
     readEndCol -
@@ -316,7 +316,7 @@ function processWeeklyMarkerQueue_(sourceSheet) {
     }
   }
 
-  // Write all AH statuses back in one batch.
+  // Write all AG statuses back in one batch.
   sourceSheet
     .getRange(
       firstDataRow,

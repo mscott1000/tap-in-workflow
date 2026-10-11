@@ -5,7 +5,7 @@ const PHONE_MATCH_CONFIG = {
   WEEKLY_LABEL: 'Weekly Call Log',
   COMPLETED_LABEL: 'Completed Call Log',
 
-  PHONE_COLUMN: 19,
+  PHONE_COLUMN: 18, // R after Contact Notes (M) is deleted
   HEADER_ROW: 1,
   DUPLICATE_COLOR: '#f4cccc',
 
