@@ -2,7 +2,35 @@
 _Last updated: 2026-10-17. This document is the source-of-truth handoff for a new ChatGPT Work session. Do not infer that AppSheet editor settings have been deployed merely because Google Sheet columns exist._
 
 
-## Verified implementation — 2026-10-17
+
+## Latest verified change — exclusive client lifecycle (2026-10-17)
+
+This section supersedes the case-only filters and unrestricted client views documented in the earlier implementation below. See [Intake and graveyard integration](INTAKE_AND_GRAVEYARD_INTEGRATION.md) for the reviewed source scripts and integration design.
+
+- Added **Clients!I1:I4**: physical `ClientStage` column plus Phase 3/4 for all three existing fictional clients. Strict Sheet dropdown and required editable AppSheet Enum: Phase 1, Phase 2, Phase 3/4, Phase 5. Regenerated Clients successfully. ClientID and all case phases are unchanged.
+- Existing views use exclusive slices:
+  - Intake → Phase1_Clients: `[ClientStage] = "Phase 1"`
+  - Research → Phase2_Clients: `[ClientStage] = "Phase 2"`
+  - Graveyard → Phase5_Clients: `[ClientStage] = "Phase 5"`
+  - Request → Phase3_Cases: `AND([ClientID].[ClientStage] = "Phase 3/4", [CasePhase] = "Phase 3")`
+  - Follow Up → Phase4_Cases: `AND([ClientID].[ClientStage] = "Phase 3/4", [CasePhase] = "Phase 4")`
+- Request/Follow Up retain their case tables and readable ClientID grouping. All five existing views remain.
+- ClientStage initial value: `IF(CONTEXT("View") = "Phase1_Clients_Form", "Phase 1", "Phase 2")`. Tested Intake Add defaults to Phase 1 and Research Add defaults to Phase 2; canceled both unsaved test forms.
+- Removed the existing DOB TODAY() initial value and made DOB, Phone, Email optional so incomplete first contacts can be recorded. Verified blank DOB in new Intake form.
+- Staff currently move an existing client by editing ClientStage on the client record; case edits still affect only that case. Set Phase 2 once intake is completed/manually entered; set Phase 3/4 after research and client contact; set Phase 5 only after all current decisions are communicated. Changing a case phase alone does not change client stage.
+- Verified exclusion by temporarily setting Avery to Phase 1, Jordan to Phase 2, Taylor to Phase 5 and syncing: Intake showed Avery, Research showed Jordan, Graveyard showed Taylor, Request had no cases despite their stored Phase 3 cases, Follow Up had no cases. Restored all three ClientStage values to Phase 3/4 and synced; Request again showed its original three cases.
+- Editor reported no issues and Save disabled after final save. No replacement app, live account connection, sharing change, or deployment.
+
+### Current boundaries
+- Queue exclusivity is implemented. Completion checks and guided transition actions are not yet implemented; ClientStage is currently a staff assertion.
+- Stored old case phases and historical records remain available through Related Cases without causing duplicate primary queue membership. When promoting a client to Phase 3/4, staff must assign the current cases their appropriate case phases; there is no bulk phase transition action yet. Fictional Jordan retains a Phase 2 sibling case from the original fixture, visible through Related Cases.
+- Email intake auto-population is **designed, not installed**: future mailbox importer should upsert one client into Phase 2, use stable submission/message receipt IDs, review ambiguous identity matches, and avoid resetting active clients on repeated intake.
+- Reviewed repository `google-intake-form-auto-add` and `repeat-case-check`; original scripts were not modified. They now exist at repository root; the old statement below that the scripts were not stored is superseded.
+- Operational graveyard remains unconnected. Plan a read-only source/history index and explicit prior-submission evidence; never equate any historical row with confirmed submission.
+- The separate ServiceEpisodes Phase field remains legacy fixture data and is not the current queue authority. Only Clients.ClientStage controls client queues. Integrate episode history deliberately later.
+- No production one-time-submission ledger or notification completion checks exist yet. Preserve the operational scripts and finish synthetic testing before connecting the operational account.
+
+## Earlier verified implementation — 2026-10-17
 
 This section supersedes the earlier "not yet configured" status and edit sequence below.
 
@@ -29,7 +57,7 @@ This section supersedes the earlier "not yet configured" status and edit sequenc
 ### Remaining work / limits
 
 - Only Cases and Clients are currently added as AppSheet tables. The other workbook tabs are not yet app tables; EpisodeID remains Text. Add further relationships only when implementing their workflows.
-- Intake, Research and Graveyard were preserved; their phase-filtering behavior has not been implemented or validated in this change.
+- Intake, Research and Graveyard were initially preserved; their filters were subsequently implemented in the latest change above.
 - The existing full-name label can produce doubled spaces for blank middle names; optional display cleanup remains.
 - Phase membership is not an eligibility decision or evidence of submission. The test temporarily put a NEEDS VERIFICATION case in Request solely to test filtering, then restored it.
 - No production-safe one-time-submission ledger, historical-match enforcement, court report transmission, or notification automation was implemented. The security/accountability review remains required before real-data deployment.
