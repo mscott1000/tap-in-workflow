@@ -1,0 +1,882 @@
+const PHONE_MATCH_CONFIG = {
+  WEEKLY_SHEET_NAME: 'Weekly Call Log',
+  COMPLETED_SHEET_NAME: 'Completed Call Log',
+  WEEKLY_LABEL: 'Weekly Call Log',
+  COMPLETED_LABEL: 'Completed Call Log',
+
+  PHONE_COLUMN: 18, // R after Contact Notes (M) is deleted
+  HEADER_ROW: 1,
+  DUPLICATE_COLOR: '#f4cccc',
+
+  FN_HEADER: 'FN',
+  LN_HEADER: 'LN',
+  MN_HEADER: 'MN'
+};
+
+const GRAVEYARD_CHECK = {
+  logSheet: 'Weekly Call Log',
+  logColumn: 11,       // K
+  sourceSheet: 'Graveyard prototype',
+  sourceColumn: 6,     // F
+  firstDataRow: 2,
+  red: '#f4cccc',
+  whitelistKey: 'GRAVEYARD_CASE_WHITELIST'
+};
+
+// ============================================================
+// SHARED MENU AND EDIT HANDLER
+// ============================================================
+
+function onEdit(e) {
+  if (!e || !e.range) return;
+
+  // Preserve the existing optional marker-copy integration.
+  if (typeof weeklyMarkerCopyOnEdit_ === 'function') {
+    weeklyMarkerCopyOnEdit_(e);
+  }
+
+  // Check case numbers in column K.
+  checkGraveyardCasesOnEdit(e);
+
+  // Check phone numbers in column R.
+  const sheet = e.range.getSheet();
+  if (sheet.getName() !== PHONE_MATCH_CONFIG.WEEKLY_SHEET_NAME) return;
+
+  if (
+    e.range.getColumn() > PHONE_MATCH_CONFIG.PHONE_COLUMN ||
+    e.range.getLastColumn() < PHONE_MATCH_CONFIG.PHONE_COLUMN
+  ) return;
+
+  const ss = e.source || SpreadsheetApp.getActiveSpreadsheet();
+  const completedSheet = ss.getSheetByName(
+    PHONE_MATCH_CONFIG.COMPLETED_SHEET_NAME
+  );
+
+  if (!completedSheet) {
+    throw new Error(
+      'Sheet not found: ' + PHONE_MATCH_CONFIG.COMPLETED_SHEET_NAME
+    );
+  }
+
+  for (
+    let row = e.range.getRow();
+    row <= e.range.getLastRow();
+    row++
+  ) {
+    if (row <= PHONE_MATCH_CONFIG.HEADER_ROW) continue;
+    phoneMatchCheckRow_(sheet, completedSheet, row);
+  }
+}
+
+// ============================================================
+// PHONE MATCHING
+// ============================================================
+
+function checkWeeklyLogRowByNumber(rowNumber) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const weeklySheet = ss.getSheetByName(
+    PHONE_MATCH_CONFIG.WEEKLY_SHEET_NAME
+  );
+  const completedSheet = ss.getSheetByName(
+    PHONE_MATCH_CONFIG.COMPLETED_SHEET_NAME
+  );
+
+  if (!weeklySheet) {
+    throw new Error(
+      'Sheet not found: ' + PHONE_MATCH_CONFIG.WEEKLY_SHEET_NAME
+    );
+  }
+
+  if (!completedSheet) {
+    throw new Error(
+      'Sheet not found: ' + PHONE_MATCH_CONFIG.COMPLETED_SHEET_NAME
+    );
+  }
+
+  phoneMatchCheckRow_(weeklySheet, completedSheet, rowNumber);
+}
+
+function phoneMatchCheckRow_(weeklySheet, completedSheet, rowNumber) {
+  if (rowNumber <= PHONE_MATCH_CONFIG.HEADER_ROW) return;
+
+  const phoneCell = weeklySheet.getRange(
+    rowNumber,
+    PHONE_MATCH_CONFIG.PHONE_COLUMN
+  );
+
+  const currentDisplayText = String(
+    phoneCell.getDisplayValue() || ''
+  ).trim();
+
+  const baseText = phoneMatchStripMatchMessages_(currentDisplayText);
+  const normalizedPhone = phoneMatchExtractNormalizedPhone_(baseText);
+
+  if (!normalizedPhone) {
+    if (baseText !== currentDisplayText) {
+      phoneCell.setValue(baseText);
+    }
+    phoneCell.setBackground(null);
+    return;
+  }
+
+  const weeklyMatches = phoneMatchFindMatchesInWeeklyLog_(
+    weeklySheet,
+    normalizedPhone,
+    rowNumber
+  );
+
+  const completedMatches = phoneMatchFindMatchesInCompletedLog_(
+    completedSheet,
+    normalizedPhone
+  );
+
+  if (!weeklyMatches.length && !completedMatches.length) {
+    if (baseText !== currentDisplayText) {
+      phoneCell.setValue(baseText);
+    }
+    phoneCell.setBackground(null);
+    return;
+  }
+
+  const messages = [];
+
+  weeklyMatches.forEach(matchRow => {
+    messages.push(
+      `match found on row ${matchRow} of ${PHONE_MATCH_CONFIG.WEEKLY_LABEL}`
+    );
+  });
+
+  completedMatches.forEach(matchRow => {
+    messages.push(
+      `match found on row ${matchRow} of ${PHONE_MATCH_CONFIG.COMPLETED_LABEL}`
+    );
+  });
+
+  phoneCell.setValue(`${baseText} - ${messages.join(' - ')}`);
+  phoneCell.setBackground(PHONE_MATCH_CONFIG.DUPLICATE_COLOR);
+
+  phoneMatchBackfillNames_(
+    weeklySheet,
+    completedSheet,
+    rowNumber,
+    normalizedPhone,
+    weeklyMatches,
+    completedMatches
+  );
+}
+
+function phoneMatchFindMatchesInWeeklyLog_(
+  weeklySheet,
+  normalizedPhone,
+  currentRow
+) {
+  const firstDataRow = PHONE_MATCH_CONFIG.HEADER_ROW + 1;
+  const lastRow = weeklySheet.getLastRow();
+
+  if (lastRow < firstDataRow) return [];
+
+  const values = weeklySheet.getRange(
+    firstDataRow,
+    PHONE_MATCH_CONFIG.PHONE_COLUMN,
+    lastRow - PHONE_MATCH_CONFIG.HEADER_ROW,
+    1
+  ).getDisplayValues();
+
+  const matches = [];
+
+  for (let i = 0; i < values.length; i++) {
+    const rowNumber = firstDataRow + i;
+    if (rowNumber === currentRow) continue;
+
+    const otherPhone = phoneMatchExtractNormalizedPhone_(values[i][0]);
+
+    if (otherPhone && otherPhone === normalizedPhone) {
+      matches.push(rowNumber);
+    }
+  }
+
+  return matches;
+}
+
+function phoneMatchFindMatchesInCompletedLog_(
+  completedSheet,
+  normalizedPhone
+) {
+  const lastRow = completedSheet.getLastRow();
+  const lastCol = completedSheet.getLastColumn();
+
+  if (lastRow <= PHONE_MATCH_CONFIG.HEADER_ROW || lastCol === 0) {
+    return [];
+  }
+
+  const values = completedSheet.getRange(
+    PHONE_MATCH_CONFIG.HEADER_ROW + 1,
+    1,
+    lastRow - PHONE_MATCH_CONFIG.HEADER_ROW,
+    lastCol
+  ).getDisplayValues();
+
+  const matches = [];
+
+  for (let r = 0; r < values.length; r++) {
+    for (let c = 0; c < values[r].length; c++) {
+      const otherPhone = phoneMatchExtractNormalizedPhone_(values[r][c]);
+
+      if (otherPhone && otherPhone === normalizedPhone) {
+        matches.push(PHONE_MATCH_CONFIG.HEADER_ROW + 1 + r);
+        break;
+      }
+    }
+  }
+
+  return matches;
+}
+
+// ============================================================
+// NAME BACKFILLING
+// ============================================================
+
+function phoneMatchBackfillNames_(
+  weeklySheet,
+  completedSheet,
+  currentRow,
+  normalizedPhone,
+  weeklyMatches,
+  completedMatches
+) {
+  const headerMap = phoneMatchBuildHeaderMap_(weeklySheet);
+
+  const fnCol = headerMap[PHONE_MATCH_CONFIG.FN_HEADER];
+  const lnCol = headerMap[PHONE_MATCH_CONFIG.LN_HEADER];
+  const mnCol = headerMap[PHONE_MATCH_CONFIG.MN_HEADER];
+
+  if (!fnCol || !lnCol || !mnCol) return;
+
+  const currentFn = String(
+    weeklySheet.getRange(currentRow, fnCol).getDisplayValue() || ''
+  ).trim();
+
+  const currentLn = String(
+    weeklySheet.getRange(currentRow, lnCol).getDisplayValue() || ''
+  ).trim();
+
+  const currentMn = String(
+    weeklySheet.getRange(currentRow, mnCol).getDisplayValue() || ''
+  ).trim();
+
+  // Do not overwrite existing names.
+  const needFn = !currentFn;
+  const needLn = !currentLn;
+  const needMn = !currentMn;
+
+  if (!needFn && !needLn && !needMn) return;
+
+  let candidate = { first: '', last: '', middle: '' };
+
+  // Prefer matches from Weekly Call Log.
+  for (const matchRow of weeklyMatches) {
+    candidate = phoneMatchExtractNameFromWeeklyRow_(
+      weeklySheet,
+      headerMap,
+      matchRow
+    );
+
+    if (candidate.first || candidate.last || candidate.middle) break;
+  }
+
+  // Otherwise use the existing Completed Call Log heuristic.
+  if (!candidate.first && !candidate.last && !candidate.middle) {
+    for (const matchRow of completedMatches) {
+      candidate = phoneMatchExtractNameFromCompletedRow_(
+        completedSheet,
+        matchRow,
+        normalizedPhone
+      );
+
+      if (candidate.first || candidate.last || candidate.middle) break;
+    }
+  }
+
+  if (!candidate.first && !candidate.last && !candidate.middle) return;
+
+  if (needFn && candidate.first) {
+    weeklySheet.getRange(currentRow, fnCol).setValue(candidate.first);
+  }
+
+  if (needLn && candidate.last) {
+    weeklySheet.getRange(currentRow, lnCol).setValue(candidate.last);
+  }
+
+  if (needMn && candidate.middle) {
+    weeklySheet.getRange(currentRow, mnCol).setValue(candidate.middle);
+  }
+}
+
+function phoneMatchExtractNameFromWeeklyRow_(
+  weeklySheet,
+  headerMap,
+  rowNumber
+) {
+  const fnCol = headerMap[PHONE_MATCH_CONFIG.FN_HEADER];
+  const lnCol = headerMap[PHONE_MATCH_CONFIG.LN_HEADER];
+  const mnCol = headerMap[PHONE_MATCH_CONFIG.MN_HEADER];
+
+  return {
+    first: phoneMatchCleanNamePiece_(
+      fnCol ? weeklySheet.getRange(rowNumber, fnCol).getDisplayValue() : ''
+    ),
+    last: phoneMatchCleanNamePiece_(
+      lnCol ? weeklySheet.getRange(rowNumber, lnCol).getDisplayValue() : ''
+    ),
+    middle: phoneMatchCleanNamePiece_(
+      mnCol ? weeklySheet.getRange(rowNumber, mnCol).getDisplayValue() : ''
+    )
+  };
+}
+
+function phoneMatchExtractNameFromCompletedRow_(
+  completedSheet,
+  rowNumber,
+  normalizedPhone
+) {
+  const lastCol = completedSheet.getLastColumn();
+
+  if (lastCol < 1) {
+    return { first: '', last: '', middle: '' };
+  }
+
+  const rowValues = completedSheet
+    .getRange(rowNumber, 1, 1, lastCol)
+    .getDisplayValues()[0]
+    .map(value => String(value || '').trim());
+
+  const phoneHitIndexes = [];
+
+  for (let i = 0; i < rowValues.length; i++) {
+    if (
+      phoneMatchExtractNormalizedPhone_(rowValues[i]) === normalizedPhone
+    ) {
+      phoneHitIndexes.push(i);
+    }
+  }
+
+  for (const phoneIdx of phoneHitIndexes) {
+    const candidate = phoneMatchFindBestNameCandidateNearIndex_(
+      rowValues,
+      phoneIdx
+    );
+
+    if (candidate.first || candidate.last || candidate.middle) {
+      return candidate;
+    }
+  }
+
+  return phoneMatchFindBestNameCandidateInRow_(rowValues);
+}
+
+function phoneMatchFindBestNameCandidateNearIndex_(rowValues, phoneIdx) {
+  const from = Math.max(0, phoneIdx - 8);
+  const to = Math.min(rowValues.length - 1, phoneIdx + 8);
+
+  // Prefer First / Last / Middle patterns.
+  for (let start = from; start <= to - 2; start++) {
+    const candidate = phoneMatchBuildNameCandidate_(
+      rowValues.slice(start, start + 3)
+    );
+
+    if (candidate.first || candidate.last || candidate.middle) {
+      return candidate;
+    }
+  }
+
+  // Then try First / Last patterns.
+  for (let start = from; start <= to - 1; start++) {
+    const candidate = phoneMatchBuildNameCandidate_(
+      rowValues.slice(start, start + 2)
+    );
+
+    if (candidate.first || candidate.last || candidate.middle) {
+      return candidate;
+    }
+  }
+
+  return { first: '', last: '', middle: '' };
+}
+
+function phoneMatchFindBestNameCandidateInRow_(rowValues) {
+  for (let start = 0; start <= rowValues.length - 3; start++) {
+    const candidate = phoneMatchBuildNameCandidate_(
+      rowValues.slice(start, start + 3)
+    );
+
+    if (candidate.first || candidate.last || candidate.middle) {
+      return candidate;
+    }
+  }
+
+  for (let start = 0; start <= rowValues.length - 2; start++) {
+    const candidate = phoneMatchBuildNameCandidate_(
+      rowValues.slice(start, start + 2)
+    );
+
+    if (candidate.first || candidate.last || candidate.middle) {
+      return candidate;
+    }
+  }
+
+  return { first: '', last: '', middle: '' };
+}
+
+function phoneMatchBuildNameCandidate_(cells) {
+  const cleaned = cells.map(value => String(value || '').trim());
+
+  if (cleaned.length === 3) {
+    const [first, last, middle] = cleaned;
+
+    if (
+      phoneMatchLooksLikeStrongNameCell_(first) &&
+      phoneMatchLooksLikeStrongNameCell_(last) &&
+      phoneMatchLooksLikeMiddleCell_(middle)
+    ) {
+      return {
+        first: phoneMatchCleanNamePiece_(first),
+        last: phoneMatchCleanNamePiece_(last),
+        middle: phoneMatchCleanNamePiece_(middle)
+      };
+    }
+  }
+
+  if (cleaned.length === 2) {
+    const [first, last] = cleaned;
+
+    if (
+      phoneMatchLooksLikeStrongNameCell_(first) &&
+      phoneMatchLooksLikeStrongNameCell_(last)
+    ) {
+      return {
+        first: phoneMatchCleanNamePiece_(first),
+        last: phoneMatchCleanNamePiece_(last),
+        middle: ''
+      };
+    }
+  }
+
+  return { first: '', last: '', middle: '' };
+}
+
+function phoneMatchLooksLikeStrongNameCell_(value) {
+  const text = String(value || '').trim();
+
+  if (!text) return false;
+  if (phoneMatchExtractNormalizedPhone_(text)) return false;
+  if (/\d/.test(text)) return false;
+  if (!/^[A-Za-z][A-Za-z' -]*$/.test(text)) return false;
+  if (text.length < 2 || text.length > 30) return false;
+
+  const banned = new Set([
+    'TRUE', 'FALSE', 'YES', 'NO',
+    'ST', 'STATE', 'CITY', 'COUNTY', 'SAINT', 'MISSOURI',
+    'ATTORNEY', 'DEFENDANT', 'PLAINTIFF', 'CASE', 'BALANCE',
+    'DISPOSITION', 'LOCATION', 'FLORISSANT', 'KIRKWOOD',
+    'MANCHESTER', 'WEBSTER', 'UNIVERSITY', 'MUNICIPAL',
+    'JUDGE', 'WARRANT', 'SUMMONS', 'PHONE', 'ADDRESS'
+  ]);
+
+  return !banned.has(text.toUpperCase());
+}
+
+function phoneMatchLooksLikeMiddleCell_(value) {
+  const text = String(value || '').trim();
+
+  if (!text) return false;
+  if (phoneMatchExtractNormalizedPhone_(text)) return false;
+  if (/\d/.test(text)) return false;
+
+  if (/^[A-Za-z]\.?$/.test(text)) return true;
+
+  if (
+    /^[A-Za-z][A-Za-z' -]*$/.test(text) &&
+    text.length <= 20
+  ) return true;
+
+  return false;
+}
+
+function phoneMatchCleanNamePiece_(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function phoneMatchBuildHeaderMap_(sheet) {
+  const headers = sheet.getRange(
+    PHONE_MATCH_CONFIG.HEADER_ROW,
+    1,
+    1,
+    sheet.getLastColumn()
+  ).getDisplayValues()[0].map(value => String(value || '').trim());
+
+  const map = {};
+
+  headers.forEach((header, index) => {
+    if (header) map[header] = index + 1;
+  });
+
+  return map;
+}
+
+function phoneMatchExtractNormalizedPhone_(value) {
+  if (value === null || value === undefined) return '';
+
+  const text = String(value);
+  const phoneRegex =
+    /(^|[^\d])((?:\+?1[\s.\-]*)?(?:\(\s*\d{3}\s*\)|\d{3})[\s.\-]*\d{3}[\s.\-]*\d{4})(?!\d)/;
+
+  const match = text.match(phoneRegex);
+  if (!match || !match[2]) return '';
+
+  let digits = match[2].replace(/\D/g, '');
+
+  if (digits.length === 11 && digits.startsWith('1')) {
+    digits = digits.slice(1);
+  }
+
+  return digits.length === 10 ? digits : '';
+}
+
+function phoneMatchStripMatchMessages_(value) {
+  let text = String(value || '');
+
+  const labels = [
+    PHONE_MATCH_CONFIG.WEEKLY_LABEL,
+    PHONE_MATCH_CONFIG.COMPLETED_LABEL
+  ];
+
+  labels.forEach(label => {
+    const pattern = new RegExp(
+      `\\s*-\\s*match found on row \\d+ of ${phoneMatchEscapeRegex_(label)}`,
+      'gi'
+    );
+
+    text = text.replace(pattern, '');
+  });
+
+  return text.trim();
+}
+
+function phoneMatchEscapeRegex_(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// ============================================================
+// CASE-CHECK WHITELIST
+// ============================================================
+
+function whitelistSelectedCells() {
+  updateSelectedWhitelist_(true);
+}
+
+function unwhitelistSelectedCells() {
+  updateSelectedWhitelist_(false);
+}
+
+function updateSelectedWhitelist_(add) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getActiveSheet();
+  const c = GRAVEYARD_CHECK;
+  const ui = SpreadsheetApp.getUi();
+
+  if (sheet.getName() !== c.logSheet) {
+    ui.alert(`Select cells on "${c.logSheet}" first.`);
+    return;
+  }
+
+  const selection = ss.getActiveRangeList();
+
+  if (!selection) {
+    ui.alert('Select cells in column K first.');
+    return;
+  }
+
+  const addresses = new Set();
+
+  selection.getRanges().forEach(range => {
+    if (
+      range.getColumn() > c.logColumn ||
+      range.getLastColumn() < c.logColumn
+    ) return;
+
+    const firstRow = Math.max(range.getRow(), c.firstDataRow);
+
+    for (let row = firstRow; row <= range.getLastRow(); row++) {
+      addresses.add(`K${row}`);
+    }
+  });
+
+  if (!addresses.size) {
+    ui.alert('Your selection must include data cells in column K.');
+    return;
+  }
+
+  // Protect shared whitelist updates from simultaneous menu actions.
+  const lock = LockService.getDocumentLock();
+  lock.waitLock(10000);
+
+  try {
+    const whitelist = getCaseWhitelist_();
+
+    addresses.forEach(address => {
+      if (add) {
+        whitelist.add(address);
+      } else {
+        whitelist.delete(address);
+      }
+    });
+
+    PropertiesService.getDocumentProperties().setProperty(
+      c.whitelistKey,
+      JSON.stringify(
+        Array.from(whitelist).sort(
+          (a, b) => Number(a.slice(1)) - Number(b.slice(1))
+        )
+      )
+    );
+  } finally {
+    lock.releaseLock();
+  }
+
+  if (add) {
+    // Remove pure-red fills from newly whitelisted cells.
+    const clearRed = Array.from(addresses).filter(address =>
+      sheet.getRange(address).getBackground().toLowerCase() === c.red
+    );
+
+    if (clearRed.length) {
+      sheet.getRangeList(clearRed).setBackground(null);
+    }
+  } else {
+    // Recheck cells immediately after removing their exemptions.
+    const eligible = getGraveyardCases_(ss);
+    const whitelist = getCaseWhitelist_();
+
+    selection.getRanges().forEach(range => {
+      if (
+        range.getColumn() > c.logColumn ||
+        range.getLastColumn() < c.logColumn
+      ) return;
+
+      const firstRow = Math.max(range.getRow(), c.firstDataRow);
+      const lastRow = range.getLastRow();
+
+      if (firstRow <= lastRow) {
+        colorGraveyardMatches_(
+          sheet,
+          firstRow,
+          lastRow,
+          eligible,
+          whitelist
+        );
+      }
+    });
+  }
+
+  ss.toast(
+    `${addresses.size} cell(s) ${
+      add ? 'whitelisted' : 'removed from whitelist'
+    }.`,
+    'Case Check',
+    5
+  );
+}
+
+function getCaseWhitelist_() {
+  const saved = PropertiesService.getDocumentProperties()
+    .getProperty(GRAVEYARD_CHECK.whitelistKey);
+
+  return new Set(saved ? JSON.parse(saved) : []);
+}
+
+function viewCaseWhitelist() {
+  const addresses = Array.from(getCaseWhitelist_()).sort(
+    (a, b) => Number(a.slice(1)) - Number(b.slice(1))
+  );
+
+  const ui = SpreadsheetApp.getUi();
+
+  ui.alert(
+    'Whitelisted cells — Weekly Call Log',
+    addresses.length
+      ? addresses.join(', ')
+      : 'No cells are whitelisted.',
+    ui.ButtonSet.OK
+  );
+}
+
+// ============================================================
+// GRAVEYARD CASE CHECKER
+// ============================================================
+
+function checkGraveyardCasesOnEdit(e) {
+  if (!e || !e.range) return;
+
+  const c = GRAVEYARD_CHECK;
+  const edited = e.range;
+  const sheet = edited.getSheet();
+
+  if (sheet.getName() !== c.logSheet) return;
+
+  if (
+    edited.getColumn() > c.logColumn ||
+    edited.getLastColumn() < c.logColumn
+  ) return;
+
+  const firstRow = Math.max(edited.getRow(), c.firstDataRow);
+  const lastRow = edited.getLastRow();
+
+  if (lastRow < firstRow) return;
+
+  const whitelist = getCaseWhitelist_();
+
+  // Skip the lookup when every affected K cell is whitelisted.
+  if (!hasCaseCellsToCheck_(firstRow, lastRow, whitelist)) return;
+
+  const ss = e.source || SpreadsheetApp.getActiveSpreadsheet();
+
+  colorGraveyardMatches_(
+    sheet,
+    firstRow,
+    lastRow,
+    getGraveyardCases_(ss),
+    whitelist
+  );
+}
+
+function refreshGraveyardMatches() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const c = GRAVEYARD_CHECK;
+  const sheet = ss.getSheetByName(c.logSheet);
+
+  if (!sheet) {
+    throw new Error('Sheet not found: ' + c.logSheet);
+  }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < c.firstDataRow) return;
+
+  const whitelist = getCaseWhitelist_();
+
+  if (!hasCaseCellsToCheck_(c.firstDataRow, lastRow, whitelist)) return;
+
+  colorGraveyardMatches_(
+    sheet,
+    c.firstDataRow,
+    lastRow,
+    getGraveyardCases_(ss),
+    whitelist
+  );
+
+  ss.toast('Case highlights refreshed.', 'Case Check', 5);
+}
+
+function hasCaseCellsToCheck_(firstRow, lastRow, whitelist) {
+  for (let row = firstRow; row <= lastRow; row++) {
+    if (!whitelist.has(`K${row}`)) return true;
+  }
+
+  return false;
+}
+
+function getGraveyardCases_(ss) {
+  const c = GRAVEYARD_CHECK;
+  const sheet = ss.getSheetByName(c.sourceSheet);
+
+  if (!sheet) {
+    throw new Error('Sheet not found: ' + c.sourceSheet);
+  }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < c.firstDataRow) return new Set();
+
+  const values = sheet.getRange(
+    c.firstDataRow,
+    c.sourceColumn,
+    lastRow - c.firstDataRow + 1,
+    1
+  ).getDisplayValues();
+
+  const eligibleCases = new Set();
+
+  values.forEach(([text]) => {
+    extractCaseNumbers_(text).forEach(caseNumber => {
+      eligibleCases.add(caseNumber);
+    });
+  });
+
+  return eligibleCases;
+}
+
+function extractCaseNumbers_(text) {
+  /*
+   * Supported formats:
+   *   210168309
+   *   25SL-CR09715
+   *   25SL-CR09715-01
+   *
+   * Match complete identifiers, longest format first.
+   * Matching is case-sensitive.
+   */
+  const pattern =
+    /(?:^|[^A-Za-z0-9-])([A-Za-z0-9]{4}-[A-Za-z0-9]{7}-[A-Za-z0-9]{2}|[A-Za-z0-9]{4}-[A-Za-z0-9]{7}|[0-9]{9})(?![A-Za-z0-9-])/g;
+
+  return Array.from(
+    String(text).matchAll(pattern),
+    match => match[1]
+  );
+}
+
+function colorGraveyardMatches_(
+  sheet,
+  firstRow,
+  lastRow,
+  eligible,
+  whitelist
+) {
+  const c = GRAVEYARD_CHECK;
+
+  const range = sheet.getRange(
+    firstRow,
+    c.logColumn,
+    lastRow - firstRow + 1,
+    1
+  );
+
+  const values = range.getDisplayValues();
+  const backgrounds = range.getBackgrounds();
+
+  const turnRed = [];
+  const clearRed = [];
+
+  values.forEach(([text], index) => {
+    const address = `K${firstRow + index}`;
+
+    // Exempt only the case check, not phone matching.
+    if (whitelist.has(address)) return;
+
+    const matches = extractCaseNumbers_(text)
+      .some(caseNumber => eligible.has(caseNumber));
+
+    const currentColor = backgrounds[index][0].toLowerCase();
+
+    if (matches && currentColor !== c.red) {
+      turnRed.push(address);
+    } else if (!matches && currentColor === c.red) {
+      clearRed.push(address);
+    }
+  });
+
+  if (turnRed.length) {
+    sheet.getRangeList(turnRed).setBackground(c.red);
+  }
+
+  if (clearRed.length) {
+    sheet.getRangeList(clearRed).setBackground(null);
+  }
+}
