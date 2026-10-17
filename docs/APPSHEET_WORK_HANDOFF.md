@@ -1,7 +1,41 @@
 # Tap In Center — AppSheet proof of concept: Work handoff
 _Last updated: 2026-10-17. This document is the source-of-truth handoff for a new ChatGPT Work session. Do not infer that AppSheet editor settings have been deployed merely because Google Sheet columns exist._
 
-## 1. Immediate objective
+
+## Verified implementation — 2026-10-17
+
+This section supersedes the earlier "not yet configured" status and edit sequence below.
+
+- Edited and saved the existing **Tap In Center Clients** app in place; saved preview version **1.000009**. All five primary views remain: Intake, Research, Request, Follow Up, Graveyard. No replacement app, sharing change, or deployment was made.
+- App ID: `4f5da70c-4818-4b2d-82cf-3a668bd8276e`.
+- Editor: https://www.appsheet.com/template/AppDef?appName=TapInCenter%E2%80%94AppSheetPOC-851545109&appId=4f5da70c-4818-4b2d-82cf-3a668bd8276e&quickStart=False
+- Confirmed `Cases[CaseID]` is the key and `CasePhase` is an editable Enum with Phase 1 through Phase 5.
+- Changed `Cases[ClientID]` from Text to **Ref → Clients**. Left **Is a part of?** unchecked. Stable client and case keys were preserved.
+- Existing Clients key is `ClientID`; existing label `_ComputedName` uses `CONCATENATE([FirstName]," ",[MiddleName]," ",[LastName])`. Reused it rather than adding another name field. AppSheet generated the reverse Related Cases relationship.
+- Added editable Cases slices containing all source columns:
+  - `Phase3_Cases`: `[CasePhase] = "Phase 3"`
+  - `Phase4_Cases`: `[CasePhase] = "Phase 4"`
+- Existing **Request** view now uses Phase3_Cases, Table view, grouped by ClientID ascending.
+- Existing **Follow Up** view now uses Phase4_Cases, Table view, grouped by ClientID ascending.
+- Both views display these columns in order: Court, CaseNumber, AttorneyStatus, ResearchStatus, Eligible, CasePhase. Other fields remain available in case details/forms. QuickEdit remains off; individual case edit forms work.
+
+### Verified fictional-record tests
+
+1. Initial Request contained only DEMO-CS001, DEMO-CS003, DEMO-CS004, under readable client names. Follow Up had no items.
+2. Edited only DEMO-CS003 in the preview from Phase 3 to Phase 4. It appeared in Follow Up under Jordan Lee. Jordan's linked client detail still showed DEMO-CS006 in Phase 2: sibling case was unchanged.
+3. Temporarily changed DEMO-CS006 from Phase 2 to Phase 3. Request showed Jordan Lee with Webster Groves / DEMO-WG-006; Follow Up showed the same Jordan Lee client with University City / DEMO-UC-003. No duplicate client was created.
+4. Restored DEMO-CS003 to Phase 3 and DEMO-CS006 to Phase 2 through the case forms. Final preview: Request has the original three cases; Follow Up has no items. Other case fields were left unchanged.
+
+### Remaining work / limits
+
+- Only Cases and Clients are currently added as AppSheet tables. The other workbook tabs are not yet app tables; EpisodeID remains Text. Add further relationships only when implementing their workflows.
+- Intake, Research and Graveyard were preserved; their phase-filtering behavior has not been implemented or validated in this change.
+- The existing full-name label can produce doubled spaces for blank middle names; optional display cleanup remains.
+- Phase membership is not an eligibility decision or evidence of submission. The test temporarily put a NEEDS VERIFICATION case in Request solely to test filtering, then restored it.
+- No production-safe one-time-submission ledger, historical-match enforcement, court report transmission, or notification automation was implemented. The security/accountability review remains required before real-data deployment.
+- Continue with synthetic data and retain the existing Jotform, scripts, and historical graveyard.
+
+## 1. Immediate objective (original request; completed above)
 
 Using a signed-in browser session, edit the **existing** Tap In Center AppSheet application (do not create another app) to make cases move independently through workflow phases while retaining one client identity. The user has already created five AppSheet views, corresponding to five phases. The Cases data table has already been regenerated after a new `CasePhase` column was added to its Google Sheets source.
 
@@ -19,7 +53,7 @@ Using a signed-in browser session, edit the **existing** Tap In Center AppSheet 
 - **Prototype Google Sheet (verified native Sheet):** https://docs.google.com/spreadsheets/d/1Yhol_3USiPmUNNhz6Mmyou2ArJ93WAlCdEKzNfi5TD8/edit
 - **Private project repository:** https://github.com/mscott1000/tap-in-workflow
 - **Separate existing research utility (public):** https://github.com/mscott1000/ICBiNCn
-- **AppSheet app editor URL:** not yet known; request its URL from the user in the new Work session or navigate from https://www.appsheet.com/ under the signed-in account.
+- **AppSheet app editor URL:** verified in the implementation section above.
 - The original five-phase Jotform-transition proposal and seven existing Apps Script/Tampermonkey code files were shared as attachments in the earlier ChatGPT conversation. They are **not** stored in this repository by this handoff; ask for them only when a specific implementation requires reading the original code. Avoid copying any embedded credentials.
 
 ## 3. What Tap In Center actually does
