@@ -1,0 +1,2659 @@
+/***************************************************************
+ * COMBINED GOOGLE SHEETS TOOLS
+ *
+ * MENUS:
+ *
+ * 1. TIC Import
+ *    - Import Intake Range
+ *
+ * 2. Note Extractor
+ *    - Extract Notes from Selected Range
+ *    - Extract Notes from Entered Range
+ *    - Clear Extracted Notes
+ *
+ ***************************************************************/
+
+
+/***************************************************************
+ * TIC IMPORTER CONFIGURATION
+ ***************************************************************/
+
+const DESTINATION_SHEET_NAME = "Graveyard prototype";
+
+/*
+ * Source Intake data begins in column C.
+ *
+ * A = ignored
+ * B = ignored
+ * C = first Intake field
+ */
+const SOURCE_START_COLUMN = 3;
+
+const SOURCE_HEADER_ROW = 1;
+const DESTINATION_HEADER_ROW = 1;
+
+const TIC_DATA_YEAR = 2026;
+
+
+/*
+ * Expected Intake structure, beginning in physical column C.
+ *
+ * C  Date
+ * D  FN
+ * E  LN
+ * F  MN
+ * G  DOB
+ * H  Phone Number
+ * I  Primary Service
+ * J  Eligible Cases
+ * K  Ineligible Cases
+ * L  Online Form
+ * M  Location
+ * N  Race
+ * O  Gender
+ * P  Residential Address
+ * Q  City
+ * R  State
+ * S  Zip Code
+ * T  Email Address
+ * U  Referral Source
+ * V  Attorney Status
+ * W  Applied for PD?
+ * X  Eligible for TBP
+ * Y  Established as TBP Client
+ * Z  Referred to Holland Law program
+ * AA Notes
+ */
+const SOURCE_HEADERS = [
+  "Date",
+  "FN",
+  "LN",
+  "MN",
+  "DOB",
+  "Phone Number",
+  "Primary Service",
+  "Eligible Cases",
+  "Ineligible Cases",
+  "Online Form",
+  "Location",
+  "Race",
+  "Gender",
+  "Residential Address",
+  "City",
+  "State",
+  "Zip Code",
+  "Email Address",
+  "Referral Source",
+  "Attorney Status",
+  "Applied for PD?",
+  "Eligible for TBP",
+  "Established as TBP Client",
+  "Referred to Holland Law program",
+  "Notes"
+];
+
+
+/*
+ * Required Graveyard prototype structure.
+ */
+const DESTINATION_HEADERS = [
+  "TIC Week",
+  "First Name",
+  "Last Name",
+  "Middle",
+  "DOB",
+  "Eligible Cases",
+  "Ineligible Cases",
+  "Phone Number",
+  "Mailing Address",
+  "City",
+  "State",
+  "Zip Code",
+  "Email Address",
+  "Court Date Obtained",
+  "Primary Contact Method",
+  "Contact History",
+  "Notes",
+  "Online Form?",
+  "Location",
+  "Race",
+  "Gender",
+  "Referral Source"
+];
+
+
+/*
+ * These fields may legitimately contain different information
+ * across duplicate source rows.
+ *
+ * Unique entries will be combined.
+ */
+const ADDITIVE_FIELDS = new Set([
+  "Eligible Cases",
+  "Ineligible Cases",
+  "Notes"
+]);
+
+
+/*
+ * Only these source fields are transferred.
+ *
+ * Primary Service
+ * Attorney Status
+ * Applied for PD?
+ * Eligible for TBP
+ * Established as TBP Client
+ * Referred to Holland Law program
+ *
+ * are intentionally omitted.
+ */
+const FIELD_MAP = [
+  { source: "Date", destination: "TIC Week" },
+  { source: "FN", destination: "First Name" },
+  { source: "LN", destination: "Last Name" },
+  { source: "MN", destination: "Middle" },
+  { source: "DOB", destination: "DOB" },
+
+  { source: "Eligible Cases", destination: "Eligible Cases" },
+  { source: "Ineligible Cases", destination: "Ineligible Cases" },
+
+  { source: "Phone Number", destination: "Phone Number" },
+
+  { source: "Residential Address", destination: "Mailing Address" },
+  { source: "City", destination: "City" },
+  { source: "State", destination: "State" },
+  { source: "Zip Code", destination: "Zip Code" },
+  { source: "Email Address", destination: "Email Address" },
+
+  { source: "Notes", destination: "Notes" },
+
+  { source: "Online Form", destination: "Online Form?" },
+  { source: "Location", destination: "Location" },
+  { source: "Race", destination: "Race" },
+  { source: "Gender", destination: "Gender" },
+
+  { source: "Referral Source", destination: "Referral Source" }
+];
+
+
+/***************************************************************
+ * ONE SHARED ONOPEN FUNCTION
+ *
+ * This is the important part for allowing both custom menus.
+ ***************************************************************/
+
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+
+  ui.createMenu('Case Check')
+    .addItem('Whitelist selected cells', 'whitelistSelectedCells')
+    .addItem(
+      'Remove selected cells from whitelist',
+      'unwhitelistSelectedCells'
+    )
+    .addItem('View whitelist', 'viewCaseWhitelist')
+    .addSeparator()
+    .addItem('Refresh case highlights', 'refreshGraveyardMatches')
+    .addToUi();
+
+  ui.createMenu('TIC Import')
+    .addItem('Import Intake Range', 'importIntakeRange')
+    .addToUi();
+
+  ui.createMenu('Note Extractor')
+    .addItem(
+      'Extract Notes from Selected Range',
+      'extractNotesFromSelection'
+    )
+    .addItem(
+      'Extract Notes from Entered Range',
+      'extractNotesFromEnteredRange'
+    )
+    .addSeparator()
+    .addItem('Clear Extracted Notes', 'clearExtractedNotes')
+    .addToUi();
+}
+
+
+/***************************************************************
+ ***************************************************************
+ *
+ * TIC IMPORTER
+ *
+ ***************************************************************
+ ***************************************************************/
+
+
+/***************************************************************
+ * MAIN TIC IMPORT FUNCTION
+ ***************************************************************/
+
+function importIntakeRange() {
+  const ui = SpreadsheetApp.getUi();
+
+  try {
+    const spreadsheet =
+      SpreadsheetApp.getActiveSpreadsheet();
+
+    const sourceSheet =
+      chooseSourceSheet_(
+        spreadsheet,
+        ui
+      );
+
+    if (!sourceSheet) {
+      return;
+    }
+
+
+    const destinationSheet =
+      spreadsheet.getSheetByName(
+        DESTINATION_SHEET_NAME
+      );
+
+
+    if (!destinationSheet) {
+      throw new Error(
+        `Destination tab "${DESTINATION_SHEET_NAME}" was not found.`
+      );
+    }
+
+
+    if (
+      sourceSheet.getSheetId() ===
+      destinationSheet.getSheetId()
+    ) {
+      throw new Error(
+        `The source sheet cannot also be "${DESTINATION_SHEET_NAME}".`
+      );
+    }
+
+
+    /***********************************************************
+     * ASK FOR ROW RANGE
+     ***********************************************************/
+
+    const rangeResponse =
+      ui.prompt(
+        "Rows to import",
+
+        `Source tab: ${sourceSheet.getName()}\n\n` +
+        `Columns A and B will be ignored.\n` +
+        `Intake data begins in column C.\n\n` +
+        `Enter the rows to import.\n\n` +
+        `Examples:\n` +
+        `3-193\n` +
+        `Row 3 - Row 193\n` +
+        `3:193`,
+
+        ui.ButtonSet.OK_CANCEL
+      );
+
+
+    if (
+      rangeResponse.getSelectedButton() !==
+      ui.Button.OK
+    ) {
+      return;
+    }
+
+
+    const rowRange =
+      parseRowRange_(
+        rangeResponse.getResponseText()
+      );
+
+
+    if (
+      rowRange.startRow <=
+      SOURCE_HEADER_ROW
+    ) {
+      throw new Error(
+        `The import range must begin below the header row.\n\n` +
+        `Header row: ${SOURCE_HEADER_ROW}`
+      );
+    }
+
+
+    if (
+      rowRange.endRow >
+      sourceSheet.getMaxRows()
+    ) {
+      throw new Error(
+        `Row ${rowRange.endRow} does not exist on ` +
+        `"${sourceSheet.getName()}".`
+      );
+    }
+
+
+    /***********************************************************
+     * VALIDATE SOURCE + DESTINATION
+     ***********************************************************/
+
+    validateSourceHeaders_(
+      sourceSheet
+    );
+
+    validateDestinationHeaders_(
+      destinationSheet
+    );
+
+
+    /***********************************************************
+     * READ SOURCE
+     ***********************************************************/
+
+    const sourceData =
+      readSourceRows_(
+        sourceSheet,
+        rowRange.startRow,
+        rowRange.endRow
+      );
+
+
+    /***********************************************************
+     * DEDUPLICATE
+     ***********************************************************/
+
+    const grouped =
+      groupSourceRecords_(
+        sourceData
+      );
+
+
+    const mergeResult =
+      mergeGroupedRecords_(
+        grouped
+      );
+
+
+    /*
+     * If conflicting duplicate information exists,
+     * NOTHING is written.
+     */
+    if (
+      mergeResult.conflicts.length > 0
+    ) {
+      showConflictAlert_(
+        ui,
+        sourceSheet,
+        rowRange,
+        mergeResult.conflicts
+      );
+
+      return;
+    }
+
+
+    const records =
+      mergeResult.records;
+
+
+    if (
+      records.length === 0
+    ) {
+      ui.alert(
+        "TIC Import",
+        "No nonblank client rows were found in that range.",
+        ui.ButtonSet.OK
+      );
+
+      return;
+    }
+
+
+    /***********************************************************
+     * FIND EXISTING DESTINATION RECORDS
+     ***********************************************************/
+
+    const destinationIndex =
+      buildDestinationIndex_(
+        destinationSheet
+      );
+
+
+    let nextNewRow =
+      Math.max(
+        destinationSheet.getLastRow() + 1,
+        DESTINATION_HEADER_ROW + 1
+      );
+
+
+    let added = 0;
+    let updated = 0;
+
+
+    records.forEach(
+      record => {
+
+        if (
+          destinationIndex.has(
+            record.key
+          )
+        ) {
+          /*
+           * Existing client/week.
+           */
+          record.destinationRow =
+            destinationIndex.get(
+              record.key
+            );
+
+          record.isNew = false;
+
+          updated++;
+
+        } else {
+          /*
+           * New client/week.
+           */
+          record.destinationRow =
+            nextNewRow++;
+
+          record.isNew = true;
+
+          destinationIndex.set(
+            record.key,
+            record.destinationRow
+          );
+
+          added++;
+        }
+      }
+    );
+
+
+    /***********************************************************
+     * WRITE RECORDS
+     ***********************************************************/
+
+    records.forEach(
+      record => {
+
+        writeRecord_(
+          sourceSheet,
+          destinationSheet,
+          record
+        );
+      }
+    );
+
+
+    SpreadsheetApp.flush();
+
+
+    /***********************************************************
+     * SUMMARY
+     ***********************************************************/
+
+    const nonBlankSourceRows =
+      sourceData.filter(
+        row => !row.isBlank
+      ).length;
+
+
+    const duplicateRowsConsolidated =
+      nonBlankSourceRows -
+      records.length;
+
+
+    ui.alert(
+      "TIC Import Complete",
+
+      `Source: ${sourceSheet.getName()}\n` +
+      `Rows: ${rowRange.startRow}-${rowRange.endRow}\n` +
+      `Source columns: C:AA\n` +
+      `Columns A and B ignored\n\n` +
+
+      `${records.length} unique client record(s) processed\n` +
+      `${added} new record(s) added\n` +
+      `${updated} existing record(s) updated\n` +
+      `${duplicateRowsConsolidated} duplicate source row(s) consolidated\n` +
+      `0 conflicts detected`,
+
+      ui.ButtonSet.OK
+    );
+
+
+  } catch (error) {
+    console.error(error);
+
+    ui.alert(
+      "TIC Import Error",
+      error.message || String(error),
+      ui.ButtonSet.OK
+    );
+  }
+}
+
+
+/***************************************************************
+ * CHOOSE SOURCE TAB
+ ***************************************************************/
+
+function chooseSourceSheet_(
+  spreadsheet,
+  ui
+) {
+  const activeSheet =
+    spreadsheet.getActiveSheet();
+
+
+  /*
+   * Automatically use the active sheet if its name begins
+   * with "Intake".
+   */
+  if (
+    activeSheet &&
+    /^Intake\b/i.test(
+      activeSheet.getName()
+    )
+  ) {
+    return activeSheet;
+  }
+
+
+  /*
+   * Otherwise ask for the source tab name.
+   */
+  const response =
+    ui.prompt(
+      "Source intake tab",
+
+      `Enter the exact weekly intake tab name.\n\n` +
+      `Example:\n` +
+      `Intake 2026_Sept 15`,
+
+      ui.ButtonSet.OK_CANCEL
+    );
+
+
+  if (
+    response.getSelectedButton() !==
+    ui.Button.OK
+  ) {
+    return null;
+  }
+
+
+  const sheetName =
+    response
+      .getResponseText()
+      .trim();
+
+
+  if (!sheetName) {
+    throw new Error(
+      "No source sheet name was entered."
+    );
+  }
+
+
+  const sheet =
+    spreadsheet.getSheetByName(
+      sheetName
+    );
+
+
+  if (!sheet) {
+    throw new Error(
+      `Could not find a sheet named "${sheetName}".`
+    );
+  }
+
+
+  return sheet;
+}
+
+
+/***************************************************************
+ * PARSE ROW RANGE
+ ***************************************************************/
+
+function parseRowRange_(input) {
+  let text =
+    String(input || "")
+      .trim()
+      .replace(
+        /\brows?\b/gi,
+        ""
+      )
+      .trim();
+
+
+  /*
+   * Accept:
+   *
+   * 3-193
+   * 3 - 193
+   * 3:193
+   * 3 to 193
+   */
+  let match =
+    text.match(
+      /^(\d+)\s*(?:-|:|\bto\b)\s*(\d+)$/i
+    );
+
+
+  /*
+   * Also accept one row:
+   *
+   * 15
+   */
+  if (!match) {
+    match =
+      text.match(
+        /^(\d+)$/
+      );
+
+
+    if (match) {
+      const row =
+        Number(
+          match[1]
+        );
+
+      return {
+        startRow: row,
+        endRow: row
+      };
+    }
+
+
+    throw new Error(
+      `Could not understand the row range "${input}".\n\n` +
+      `Use a format such as:\n` +
+      `3-193`
+    );
+  }
+
+
+  const startRow =
+    Number(
+      match[1]
+    );
+
+  const endRow =
+    Number(
+      match[2]
+    );
+
+
+  if (
+    !Number.isInteger(startRow) ||
+    !Number.isInteger(endRow) ||
+    startRow < 1 ||
+    endRow < 1
+  ) {
+    throw new Error(
+      "Row numbers must be positive whole numbers."
+    );
+  }
+
+
+  if (
+    endRow <
+    startRow
+  ) {
+    throw new Error(
+      `The ending row (${endRow}) comes before ` +
+      `the starting row (${startRow}).`
+    );
+  }
+
+
+  return {
+    startRow,
+    endRow
+  };
+}
+
+
+/***************************************************************
+ * VALIDATE SOURCE HEADERS
+ ***************************************************************/
+
+function validateSourceHeaders_(
+  sheet
+) {
+  const actual =
+    sheet
+      .getRange(
+        SOURCE_HEADER_ROW,
+        SOURCE_START_COLUMN,
+        1,
+        SOURCE_HEADERS.length
+      )
+      .getDisplayValues()[0]
+      .map(
+        normalizeHeader_
+      );
+
+
+  const problems = [];
+
+
+  SOURCE_HEADERS.forEach(
+    (expected, index) => {
+
+      if (
+        actual[index] !==
+        expected
+      ) {
+        const physicalColumn =
+          SOURCE_START_COLUMN +
+          index;
+
+
+        problems.push(
+          `Column ${columnLetter_(physicalColumn)}: ` +
+          `expected "${expected}", ` +
+          `found "${actual[index] || "(blank)"}"`
+        );
+      }
+    }
+  );
+
+
+  if (
+    problems.length > 0
+  ) {
+    throw new Error(
+      `The source sheet "${sheet.getName()}" does not match ` +
+      `the expected Intake format.\n\n` +
+
+      `IMPORTANT: Columns A and B are intentionally ignored.\n` +
+      `The 25-column Intake dataset must begin in COLUMN C.\n\n` +
+
+      `Expected source range:\n` +
+      `C:AA\n\n` +
+
+      problems.join("\n")
+    );
+  }
+}
+
+
+/***************************************************************
+ * VALIDATE DESTINATION HEADERS
+ ***************************************************************/
+
+function validateDestinationHeaders_(
+  sheet
+) {
+  const actual =
+    sheet
+      .getRange(
+        DESTINATION_HEADER_ROW,
+        1,
+        1,
+        DESTINATION_HEADERS.length
+      )
+      .getDisplayValues()[0]
+      .map(
+        normalizeHeader_
+      );
+
+
+  const problems = [];
+
+
+  DESTINATION_HEADERS.forEach(
+    (expected, index) => {
+
+      if (
+        actual[index] !==
+        expected
+      ) {
+        problems.push(
+          `Column ${columnLetter_(index + 1)}: ` +
+          `expected "${expected}", ` +
+          `found "${actual[index] || "(blank)"}"`
+        );
+      }
+    }
+  );
+
+
+  if (
+    problems.length > 0
+  ) {
+    throw new Error(
+      `"${DESTINATION_SHEET_NAME}" does not match ` +
+      `the expected destination format.\n\n` +
+      problems.join("\n")
+    );
+  }
+}
+
+
+/***************************************************************
+ * NORMALIZE HEADER
+ ***************************************************************/
+
+function normalizeHeader_(
+  value
+) {
+  return String(
+    value || ""
+  )
+    .replace(
+      /\u00A0/g,
+      " "
+    )
+    .trim();
+}
+
+
+/***************************************************************
+ * READ SOURCE ROWS
+ ***************************************************************/
+
+function readSourceRows_(
+  sheet,
+  startRow,
+  endRow
+) {
+  const rowCount =
+    endRow -
+    startRow +
+    1;
+
+
+  /*
+   * Read only C:AA.
+   *
+   * A and B are ignored.
+   */
+  const range =
+    sheet.getRange(
+      startRow,
+      SOURCE_START_COLUMN,
+      rowCount,
+      SOURCE_HEADERS.length
+    );
+
+
+  const values =
+    range.getDisplayValues();
+
+  const notes =
+    range.getNotes();
+
+
+  const headerIndex = {};
+
+
+  SOURCE_HEADERS.forEach(
+    (header, index) => {
+
+      headerIndex[header] =
+        index;
+    }
+  );
+
+
+  return values.map(
+    (row, localIndex) => {
+
+      const sheetRow =
+        startRow +
+        localIndex;
+
+
+      const isBlank =
+        row.every(
+          value =>
+            String(
+              value || ""
+            ).trim() === ""
+        );
+
+
+      return {
+        sheetRow: sheetRow,
+        values: row,
+        notes: notes[localIndex],
+        headerIndex: headerIndex,
+        isBlank: isBlank
+      };
+    }
+  );
+}
+
+
+/***************************************************************
+ * GROUP SOURCE RECORDS BY:
+ *
+ * TIC Week + First Name + Last Name + DOB
+ ***************************************************************/
+
+function groupSourceRecords_(
+  rows
+) {
+  const groups =
+    new Map();
+
+
+  rows.forEach(
+    row => {
+
+      if (
+        row.isBlank
+      ) {
+        return;
+      }
+
+
+      const dateValue =
+        row.values[
+          row.headerIndex["Date"]
+        ];
+
+      const firstName =
+        row.values[
+          row.headerIndex["FN"]
+        ];
+
+      const lastName =
+        row.values[
+          row.headerIndex["LN"]
+        ];
+
+      const dob =
+        row.values[
+          row.headerIndex["DOB"]
+        ];
+
+
+      const missing = [];
+
+
+      if (
+        isBlank_(
+          dateValue
+        )
+      ) {
+        missing.push(
+          "Date"
+        );
+      }
+
+
+      if (
+        isBlank_(
+          firstName
+        )
+      ) {
+        missing.push(
+          "FN"
+        );
+      }
+
+
+      if (
+        isBlank_(
+          lastName
+        )
+      ) {
+        missing.push(
+          "LN"
+        );
+      }
+
+
+      if (
+        isBlank_(
+          dob
+        )
+      ) {
+        missing.push(
+          "DOB"
+        );
+      }
+
+
+      if (
+        missing.length > 0
+      ) {
+        throw new Error(
+          `Source row ${row.sheetRow} cannot be identified because ` +
+          `the following key field(s) are blank:\n\n` +
+          missing.join(", ")
+        );
+      }
+
+
+      const ticWeek =
+        normalizeTICWeek_(
+          dateValue,
+          row.sheetRow
+        );
+
+
+      row.ticWeek =
+        ticWeek;
+
+
+      const key =
+        makeClientKey_(
+          ticWeek.display,
+          firstName,
+          lastName,
+          dob
+        );
+
+
+      row.key =
+        key;
+
+
+      if (
+        !groups.has(
+          key
+        )
+      ) {
+        groups.set(
+          key,
+          []
+        );
+      }
+
+
+      groups
+        .get(
+          key
+        )
+        .push(
+          row
+        );
+    }
+  );
+
+
+  return groups;
+}
+
+
+/***************************************************************
+ * MERGE DUPLICATES
+ ***************************************************************/
+
+function mergeGroupedRecords_(
+  groups
+) {
+  const records = [];
+  const conflicts = [];
+
+
+  groups.forEach(
+    (rows, key) => {
+
+      const firstRow =
+        rows[0];
+
+
+      const mergedValues = {};
+      const mergedCellNotes = {};
+
+
+      FIELD_MAP.forEach(
+        mapping => {
+
+          const destinationField =
+            mapping.destination;
+
+          const sourceField =
+            mapping.source;
+
+
+          const sourceIndex =
+            firstRow.headerIndex[
+              sourceField
+            ];
+
+
+          const valueEntries = [];
+          const cellNoteEntries = [];
+
+
+          rows.forEach(
+            row => {
+
+              let value =
+                row.values[
+                  sourceIndex
+                ];
+
+
+              /*
+               * Source Date becomes TIC Week.
+               */
+              if (
+                sourceField ===
+                "Date"
+              ) {
+                value =
+                  row.ticWeek.display;
+              }
+
+
+              if (
+                !isBlank_(
+                  value
+                )
+              ) {
+                valueEntries.push({
+                  value: value,
+
+                  normalized:
+                    normalizeComparisonValue_(
+                      value
+                    ),
+
+                  row:
+                    row.sheetRow
+                });
+              }
+
+
+              /*
+               * Preserve Google Sheets cell Notes as well.
+               */
+              const cellNote =
+                row.notes[
+                  sourceIndex
+                ];
+
+
+              if (
+                !isBlank_(
+                  cellNote
+                )
+              ) {
+                cellNoteEntries.push({
+                  value: cellNote,
+
+                  normalized:
+                    normalizeComparisonValue_(
+                      cellNote
+                    ),
+
+                  row:
+                    row.sheetRow
+                });
+              }
+            }
+          );
+
+
+          /*
+           * Merge unique cell-note metadata.
+           */
+          mergedCellNotes[
+            destinationField
+          ] =
+            mergeUniqueEntries_(
+              cellNoteEntries
+            );
+
+
+          /*
+           * Eligible Cases,
+           * Ineligible Cases,
+           * Notes
+           *
+           * may contain multiple unique values.
+           */
+          if (
+            ADDITIVE_FIELDS.has(
+              destinationField
+            )
+          ) {
+            mergedValues[
+              destinationField
+            ] =
+              mergeUniqueEntries_(
+                valueEntries
+              );
+
+            return;
+          }
+
+
+          /*
+           * All other fields should have at most one
+           * unique nonblank value.
+           */
+          const uniqueEntries =
+            uniqueEntries_(
+              valueEntries
+            );
+
+
+          if (
+            uniqueEntries.length > 1
+          ) {
+            conflicts.push({
+              key: key,
+              field: destinationField,
+
+              rows:
+                uniqueEntries.flatMap(
+                  entry =>
+                    entry.rows
+                ),
+
+              values:
+                uniqueEntries.map(
+                  entry =>
+                    entry.value
+                )
+            });
+
+            return;
+          }
+
+
+          mergedValues[
+            destinationField
+          ] =
+            uniqueEntries.length
+              ? uniqueEntries[0].value
+              : "";
+        }
+      );
+
+
+      records.push({
+        key: key,
+
+        sourceRows:
+          rows.map(
+            row =>
+              row.sheetRow
+          ),
+
+        /*
+         * Formatting comes from the first row in the duplicate group.
+         */
+        formatSourceRow:
+          firstRow.sheetRow,
+
+        values:
+          mergedValues,
+
+        cellNotes:
+          mergedCellNotes,
+
+        ticWeek:
+          firstRow.ticWeek,
+
+        destinationRow:
+          null,
+
+        isNew:
+          null
+      });
+    }
+  );
+
+
+  return {
+    records: records,
+    conflicts: conflicts
+  };
+}
+
+
+/***************************************************************
+ * INDEX EXISTING GRAVEYARD PROTOTYPE RECORDS
+ ***************************************************************/
+
+function buildDestinationIndex_(
+  sheet
+) {
+  const index =
+    new Map();
+
+
+  const lastRow =
+    sheet.getLastRow();
+
+
+  if (
+    lastRow <=
+    DESTINATION_HEADER_ROW
+  ) {
+    return index;
+  }
+
+
+  const rowCount =
+    lastRow -
+    DESTINATION_HEADER_ROW;
+
+
+  const data =
+    sheet
+      .getRange(
+        DESTINATION_HEADER_ROW + 1,
+        1,
+        rowCount,
+        DESTINATION_HEADERS.length
+      )
+      .getDisplayValues();
+
+
+  data.forEach(
+    (row, localIndex) => {
+
+      const sheetRow =
+        DESTINATION_HEADER_ROW +
+        1 +
+        localIndex;
+
+
+      const ticWeek =
+        row[0];
+
+      const firstName =
+        row[1];
+
+      const lastName =
+        row[2];
+
+      const dob =
+        row[4];
+
+
+      /*
+       * Ignore empty rows.
+       */
+      if (
+        isBlank_(ticWeek) &&
+        isBlank_(firstName) &&
+        isBlank_(lastName) &&
+        isBlank_(dob)
+      ) {
+        return;
+      }
+
+
+      /*
+       * Do not index incomplete keys.
+       */
+      if (
+        isBlank_(ticWeek) ||
+        isBlank_(firstName) ||
+        isBlank_(lastName) ||
+        isBlank_(dob)
+      ) {
+        return;
+      }
+
+
+      const normalizedWeek =
+        normalizeTICWeek_(
+          ticWeek,
+          sheetRow
+        );
+
+
+      const key =
+        makeClientKey_(
+          normalizedWeek.display,
+          firstName,
+          lastName,
+          dob
+        );
+
+
+      if (
+        index.has(
+          key
+        )
+      ) {
+        throw new Error(
+          `Duplicate client records already exist in ` +
+          `"${DESTINATION_SHEET_NAME}".\n\n` +
+
+          `Rows ${index.get(key)} and ${sheetRow} have the same:\n` +
+          `TIC Week + First Name + Last Name + DOB.\n\n` +
+
+          `Please resolve that duplication before importing.`
+        );
+      }
+
+
+      index.set(
+        key,
+        sheetRow
+      );
+    }
+  );
+
+
+  return index;
+}
+
+
+/***************************************************************
+ * WRITE ONE RECORD TO GRAVEYARD PROTOTYPE
+ ***************************************************************/
+
+function writeRecord_(
+  sourceSheet,
+  destinationSheet,
+  record
+) {
+  const row =
+    record.destinationRow;
+
+  const values =
+    record.values;
+
+  const notes =
+    record.cellNotes;
+
+
+  /*************************************************************
+   * DESTINATION A:M
+   *************************************************************/
+
+  const leftValues = [[
+
+    record.ticWeek.dateObject,
+
+    values["First Name"],
+    values["Last Name"],
+    values["Middle"],
+    values["DOB"],
+
+    values["Eligible Cases"],
+    values["Ineligible Cases"],
+
+    values["Phone Number"],
+
+    values["Mailing Address"],
+    values["City"],
+    values["State"],
+    values["Zip Code"],
+    values["Email Address"]
+
+  ]];
+
+
+  const leftNotes = [[
+
+    notes["TIC Week"] || "",
+    notes["First Name"] || "",
+    notes["Last Name"] || "",
+    notes["Middle"] || "",
+    notes["DOB"] || "",
+
+    notes["Eligible Cases"] || "",
+    notes["Ineligible Cases"] || "",
+
+    notes["Phone Number"] || "",
+
+    notes["Mailing Address"] || "",
+    notes["City"] || "",
+    notes["State"] || "",
+    notes["Zip Code"] || "",
+    notes["Email Address"] || ""
+
+  ]];
+
+
+  destinationSheet
+    .getRange(
+      row,
+      1,
+      1,
+      13
+    )
+    .setValues(
+      leftValues
+    )
+    .setNotes(
+      leftNotes
+    );
+
+
+  /*************************************************************
+   * DESTINATION N:P
+   *
+   * THESE ARE NEVER TOUCHED:
+   *
+   * N = Court Date Obtained
+   * O = Primary Contact Method
+   * P = Contact History
+   *************************************************************/
+
+
+  /*************************************************************
+   * DESTINATION Q:V
+   *************************************************************/
+
+  const rightValues = [[
+
+    values["Notes"],
+    values["Online Form?"],
+    values["Location"],
+    values["Race"],
+    values["Gender"],
+    values["Referral Source"]
+
+  ]];
+
+
+  const rightNotes = [[
+
+    notes["Notes"] || "",
+    notes["Online Form?"] || "",
+    notes["Location"] || "",
+    notes["Race"] || "",
+    notes["Gender"] || "",
+    notes["Referral Source"] || ""
+
+  ]];
+
+
+  destinationSheet
+    .getRange(
+      row,
+      17,
+      1,
+      6
+    )
+    .setValues(
+      rightValues
+    )
+    .setNotes(
+      rightNotes
+    );
+
+
+  /*************************************************************
+   * COPY SOURCE FORMATTING
+   *************************************************************/
+
+  copyRecordFormatting_(
+    sourceSheet,
+    destinationSheet,
+    record.formatSourceRow,
+    row
+  );
+
+
+  /*
+   * Show full 2026 TIC Week.
+   */
+  destinationSheet
+    .getRange(
+      row,
+      1
+    )
+    .setNumberFormat(
+      "m/d/yyyy"
+    );
+}
+
+
+/***************************************************************
+ * COPY FORMATTING FROM SOURCE TO DESTINATION
+ ***************************************************************/
+
+function copyRecordFormatting_(
+  sourceSheet,
+  destinationSheet,
+  sourceRow,
+  destinationRow
+) {
+  const destinationGridId =
+    destinationSheet.getSheetId();
+
+
+  /*
+   * C:G
+   *
+   * Date / FN / LN / MN / DOB
+   *
+   * →
+   *
+   * A:E
+   */
+  sourceSheet
+    .getRange(
+      sourceRow,
+      SOURCE_START_COLUMN,
+      1,
+      5
+    )
+    .copyFormatToRange(
+      destinationGridId,
+      1,
+      5,
+      destinationRow,
+      destinationRow
+    );
+
+
+  /*
+   * J:K
+   *
+   * Eligible Cases / Ineligible Cases
+   *
+   * →
+   *
+   * F:G
+   */
+  sourceSheet
+    .getRange(
+      sourceRow,
+      SOURCE_START_COLUMN + 7,
+      1,
+      2
+    )
+    .copyFormatToRange(
+      destinationGridId,
+      6,
+      7,
+      destinationRow,
+      destinationRow
+    );
+
+
+  /*
+   * H
+   *
+   * Phone Number
+   *
+   * →
+   *
+   * H
+   */
+  sourceSheet
+    .getRange(
+      sourceRow,
+      SOURCE_START_COLUMN + 5
+    )
+    .copyFormatToRange(
+      destinationGridId,
+      8,
+      8,
+      destinationRow,
+      destinationRow
+    );
+
+
+  /*
+   * P:T
+   *
+   * Residential Address
+   * City
+   * State
+   * Zip Code
+   * Email Address
+   *
+   * →
+   *
+   * I:M
+   */
+  sourceSheet
+    .getRange(
+      sourceRow,
+      SOURCE_START_COLUMN + 13,
+      1,
+      5
+    )
+    .copyFormatToRange(
+      destinationGridId,
+      9,
+      13,
+      destinationRow,
+      destinationRow
+    );
+
+
+  /*
+   * AA
+   *
+   * Notes
+   *
+   * →
+   *
+   * Q
+   */
+  sourceSheet
+    .getRange(
+      sourceRow,
+      SOURCE_START_COLUMN + 24
+    )
+    .copyFormatToRange(
+      destinationGridId,
+      17,
+      17,
+      destinationRow,
+      destinationRow
+    );
+
+
+  /*
+   * L:O
+   *
+   * Online Form
+   * Location
+   * Race
+   * Gender
+   *
+   * →
+   *
+   * R:U
+   */
+  sourceSheet
+    .getRange(
+      sourceRow,
+      SOURCE_START_COLUMN + 9,
+      1,
+      4
+    )
+    .copyFormatToRange(
+      destinationGridId,
+      18,
+      21,
+      destinationRow,
+      destinationRow
+    );
+
+
+  /*
+   * U
+   *
+   * Referral Source
+   *
+   * →
+   *
+   * V
+   */
+  sourceSheet
+    .getRange(
+      sourceRow,
+      SOURCE_START_COLUMN + 18
+    )
+    .copyFormatToRange(
+      destinationGridId,
+      22,
+      22,
+      destinationRow,
+      destinationRow
+    );
+}
+
+
+/***************************************************************
+ * NORMALIZE TIC WEEK
+ ***************************************************************/
+
+function normalizeTICWeek_(
+  value,
+  rowNumber
+) {
+  const original =
+    String(
+      value || ""
+    ).trim();
+
+
+  if (!original) {
+    throw new Error(
+      `Blank TIC Week / Date on row ${rowNumber}.`
+    );
+  }
+
+
+  /*
+   * Accept:
+   *
+   * 7/7
+   * 07/07
+   * 7-7
+   * 7/7/26
+   * 7/7/2026
+   */
+  const match =
+    original.match(
+      /^(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2}|\d{4}))?$/
+    );
+
+
+  if (!match) {
+    throw new Error(
+      `Could not understand Date "${original}" ` +
+      `on row ${rowNumber}.`
+    );
+  }
+
+
+  const month =
+    Number(
+      match[1]
+    );
+
+  const day =
+    Number(
+      match[2]
+    );
+
+
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31
+  ) {
+    throw new Error(
+      `Invalid Date "${original}" on row ${rowNumber}.`
+    );
+  }
+
+
+  let year =
+    TIC_DATA_YEAR;
+
+
+  if (
+    match[3]
+  ) {
+    year =
+      Number(
+        match[3]
+      );
+
+
+    if (
+      year < 100
+    ) {
+      year +=
+        2000;
+    }
+
+
+    if (
+      year !==
+      TIC_DATA_YEAR
+    ) {
+      throw new Error(
+        `Row ${rowNumber} contains TIC Week "${original}".\n\n` +
+        `This importer is currently configured for ${TIC_DATA_YEAR}.`
+      );
+    }
+  }
+
+
+  const dateObject =
+    new Date(
+      year,
+      month - 1,
+      day
+    );
+
+
+  /*
+   * Reject impossible dates such as 2/31.
+   */
+  if (
+    dateObject.getFullYear() !== year ||
+    dateObject.getMonth() !== month - 1 ||
+    dateObject.getDate() !== day
+  ) {
+    throw new Error(
+      `Invalid calendar date "${original}" ` +
+      `on row ${rowNumber}.`
+    );
+  }
+
+
+  return {
+    display:
+      `${month}/${day}/${year}`,
+
+    dateObject:
+      dateObject
+  };
+}
+
+
+/***************************************************************
+ * CREATE CLIENT KEY
+ ***************************************************************/
+
+function makeClientKey_(
+  ticWeek,
+  firstName,
+  lastName,
+  dob
+) {
+  return [
+    normalizeKeyText_(
+      ticWeek
+    ),
+
+    normalizeKeyText_(
+      firstName
+    ),
+
+    normalizeKeyText_(
+      lastName
+    ),
+
+    normalizeDOBKey_(
+      dob
+    )
+
+  ].join(
+    "||"
+  );
+}
+
+
+/***************************************************************
+ * NORMALIZE GENERAL KEY TEXT
+ ***************************************************************/
+
+function normalizeKeyText_(
+  value
+) {
+  return String(
+    value || ""
+  )
+    .trim()
+    .replace(
+      /\s+/g,
+      " "
+    )
+    .toLowerCase();
+}
+
+
+/***************************************************************
+ * NORMALIZE DOB FOR MATCHING ONLY
+ ***************************************************************/
+
+function normalizeDOBKey_(
+  value
+) {
+  const text =
+    String(
+      value || ""
+    ).trim();
+
+
+  const match =
+    text.match(
+      /^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2}|\d{4})$/
+    );
+
+
+  if (!match) {
+    return normalizeKeyText_(
+      text
+    );
+  }
+
+
+  const month =
+    Number(
+      match[1]
+    );
+
+  const day =
+    Number(
+      match[2]
+    );
+
+
+  let year =
+    Number(
+      match[3]
+    );
+
+
+  /*
+   * During 2026:
+   *
+   * 00-26 -> 2000-2026
+   * 27-99 -> 1927-1999
+   */
+  if (
+    year < 100
+  ) {
+    const pivot =
+      TIC_DATA_YEAR % 100;
+
+
+    year =
+      year <= pivot
+        ? 2000 + year
+        : 1900 + year;
+  }
+
+
+  return [
+    year,
+    String(month).padStart(
+      2,
+      "0"
+    ),
+    String(day).padStart(
+      2,
+      "0"
+    )
+  ].join(
+    "-"
+  );
+}
+
+
+/***************************************************************
+ * RETURN UNIQUE VALUES
+ ***************************************************************/
+
+function uniqueEntries_(
+  entries
+) {
+  const map =
+    new Map();
+
+
+  entries.forEach(
+    entry => {
+
+      if (
+        !map.has(
+          entry.normalized
+        )
+      ) {
+        map.set(
+          entry.normalized,
+          {
+            value:
+              entry.value,
+
+            rows: [
+              entry.row
+            ]
+          }
+        );
+
+      } else {
+        map
+          .get(
+            entry.normalized
+          )
+          .rows
+          .push(
+            entry.row
+          );
+      }
+    }
+  );
+
+
+  return Array.from(
+    map.values()
+  );
+}
+
+
+/***************************************************************
+ * MERGE UNIQUE VALUES
+ ***************************************************************/
+
+function mergeUniqueEntries_(
+  entries
+) {
+  const unique =
+    uniqueEntries_(
+      entries
+    );
+
+
+  return unique
+    .map(
+      entry =>
+        entry.value
+    )
+    .join(
+      "\n\n"
+    );
+}
+
+
+/***************************************************************
+ * NORMALIZE VALUES FOR DUPLICATE COMPARISON
+ ***************************************************************/
+
+function normalizeComparisonValue_(
+  value
+) {
+  return String(
+    value || ""
+  ).trim();
+}
+
+
+/***************************************************************
+ * BLANK CHECK
+ ***************************************************************/
+
+function isBlank_(
+  value
+) {
+  return String(
+    value || ""
+  ).trim() === "";
+}
+
+
+/***************************************************************
+ * SHOW DUPLICATE CONFLICTS
+ ***************************************************************/
+
+function showConflictAlert_(
+  ui,
+  sourceSheet,
+  rowRange,
+  conflicts
+) {
+  const MAX_TO_SHOW =
+    10;
+
+
+  const preview =
+    conflicts
+      .slice(
+        0,
+        MAX_TO_SHOW
+      )
+      .map(
+        (conflict, index) => {
+
+          return (
+            `${index + 1}. ${conflict.field}\n` +
+            `Rows: ${conflict.rows.join(", ")}\n` +
+            `Values:\n` +
+
+            conflict.values
+              .map(
+                value =>
+                  `• ${value}`
+              )
+              .join(
+                "\n"
+              )
+          );
+        }
+      )
+      .join(
+        "\n\n"
+      );
+
+
+  const more =
+    conflicts.length >
+    MAX_TO_SHOW
+
+      ? `\n\n...plus ${conflicts.length - MAX_TO_SHOW} more conflict(s).`
+
+      : "";
+
+
+  console.log(
+    JSON.stringify(
+      conflicts,
+      null,
+      2
+    )
+  );
+
+
+  ui.alert(
+    "Import Stopped — Conflicting Duplicate Data",
+
+    `No data was written to "${DESTINATION_SHEET_NAME}".\n\n` +
+
+    `Source: ${sourceSheet.getName()}\n` +
+    `Rows: ${rowRange.startRow}-${rowRange.endRow}\n` +
+    `Columns A and B ignored\n` +
+    `Intake data read from C:AA\n\n` +
+
+    `Duplicate client rows contained different values in ` +
+    `fields that should agree.\n\n` +
+
+    preview +
+    more,
+
+    ui.ButtonSet.OK
+  );
+}
+
+
+/***************************************************************
+ * COLUMN NUMBER → LETTER
+ ***************************************************************/
+
+function columnLetter_(
+  column
+) {
+  let letter =
+    "";
+
+
+  while (
+    column > 0
+  ) {
+    const remainder =
+      (column - 1) %
+      26;
+
+
+    letter =
+      String.fromCharCode(
+        65 +
+        remainder
+      ) +
+      letter;
+
+
+    column =
+      Math.floor(
+        (column - 1) /
+        26
+      );
+  }
+
+
+  return letter;
+}
+
+
+/***************************************************************
+ ***************************************************************
+ *
+ * NOTE EXTRACTOR
+ *
+ ***************************************************************
+ ***************************************************************/
+
+
+/***************************************************************
+ * EXTRACT NOTES FROM SELECTED RANGE
+ ***************************************************************/
+
+function extractNotesFromSelection() {
+  const spreadsheet =
+    SpreadsheetApp.getActiveSpreadsheet();
+
+  const sheet =
+    spreadsheet.getActiveSheet();
+
+  const range =
+    sheet.getActiveRange();
+
+
+  if (!range) {
+    SpreadsheetApp
+      .getUi()
+      .alert(
+        "Please select the cells containing the notes you want to extract."
+      );
+
+    return;
+  }
+
+
+  extractNotesFromRange_(
+    sheet,
+    range
+  );
+}
+
+
+/***************************************************************
+ * EXTRACT NOTES FROM ENTERED RANGE
+ ***************************************************************/
+
+function extractNotesFromEnteredRange() {
+  const spreadsheet =
+    SpreadsheetApp.getActiveSpreadsheet();
+
+  const sheet =
+    spreadsheet.getActiveSheet();
+
+  const ui =
+    SpreadsheetApp.getUi();
+
+
+  const response =
+    ui.prompt(
+      "Extract Cell Notes",
+
+      "Enter the range containing the notes, for example K2:K200",
+
+      ui.ButtonSet.OK_CANCEL
+    );
+
+
+  if (
+    response.getSelectedButton() !==
+    ui.Button.OK
+  ) {
+    return;
+  }
+
+
+  const rangeA1 =
+    response
+      .getResponseText()
+      .trim();
+
+
+  if (!rangeA1) {
+    ui.alert(
+      "No range was entered."
+    );
+
+    return;
+  }
+
+
+  try {
+    const range =
+      sheet.getRange(
+        rangeA1
+      );
+
+
+    extractNotesFromRange_(
+      sheet,
+      range
+    );
+
+
+  } catch (error) {
+    ui.alert(
+      `The range "${rangeA1}" could not be read.\n\n` +
+      `Please use a range such as K2:K200.`
+    );
+  }
+}
+
+
+/***************************************************************
+ * INTERNAL NOTE EXTRACTION FUNCTION
+ ***************************************************************/
+
+function extractNotesFromRange_(
+  sourceSheet,
+  range
+) {
+  const spreadsheet =
+    SpreadsheetApp.getActiveSpreadsheet();
+
+
+  /*
+   * Read the entire selected range at once.
+   */
+  const notes =
+    range.getNotes();
+
+  const values =
+    range.getDisplayValues();
+
+
+  const startRow =
+    range.getRow();
+
+  const startColumn =
+    range.getColumn();
+
+
+  const output = [];
+
+
+  for (
+    let row = 0;
+    row < notes.length;
+    row++
+  ) {
+    for (
+      let col = 0;
+      col < notes[row].length;
+      col++
+    ) {
+      const note =
+        notes[row][col];
+
+
+      /*
+       * Ignore cells without Notes.
+       */
+      if (
+        note &&
+        note.trim() !== ""
+      ) {
+        const actualRow =
+          startRow +
+          row;
+
+        const actualColumn =
+          startColumn +
+          col;
+
+
+        const cellAddress =
+          sourceSheet
+            .getRange(
+              actualRow,
+              actualColumn
+            )
+            .getA1Notation();
+
+
+        output.push([
+          sourceSheet.getName(),
+          cellAddress,
+          values[row][col],
+          note
+        ]);
+      }
+    }
+  }
+
+
+  if (
+    output.length === 0
+  ) {
+    SpreadsheetApp
+      .getUi()
+      .alert(
+        `No cell notes were found in ` +
+        `${sourceSheet.getName()}!${range.getA1Notation()}`
+      );
+
+    return;
+  }
+
+
+  /*
+   * Find or create output tab.
+   */
+  let outputSheet =
+    spreadsheet.getSheetByName(
+      "Extracted Notes"
+    );
+
+
+  if (!outputSheet) {
+    outputSheet =
+      spreadsheet.insertSheet(
+        "Extracted Notes"
+      );
+  }
+
+
+  /*
+   * Remove previous output.
+   */
+  outputSheet.clear();
+
+
+  const headers = [
+    "Source Sheet",
+    "Cell",
+    "Cell Value",
+    "Note Text"
+  ];
+
+
+  outputSheet
+    .getRange(
+      1,
+      1,
+      1,
+      headers.length
+    )
+    .setValues([
+      headers
+    ])
+    .setFontWeight(
+      "bold"
+    );
+
+
+  outputSheet
+    .getRange(
+      2,
+      1,
+      output.length,
+      headers.length
+    )
+    .setValues(
+      output
+    );
+
+
+  /*
+   * Wrap long note text.
+   */
+  outputSheet
+    .getRange(
+      2,
+      4,
+      output.length,
+      1
+    )
+    .setWrap(
+      true
+    );
+
+
+  outputSheet.setFrozenRows(
+    1
+  );
+
+
+  /*
+   * Column widths.
+   */
+  outputSheet.setColumnWidth(
+    1,
+    160
+  );
+
+  outputSheet.setColumnWidth(
+    2,
+    90
+  );
+
+  outputSheet.setColumnWidth(
+    3,
+    220
+  );
+
+  outputSheet.setColumnWidth(
+    4,
+    500
+  );
+
+
+  /*
+   * Resize multiline rows.
+   */
+  outputSheet.autoResizeRows(
+    1,
+    output.length + 1
+  );
+
+
+  outputSheet.activate();
+
+  outputSheet
+    .getRange(
+      "A1"
+    )
+    .activate();
+
+
+  SpreadsheetApp
+    .getUi()
+    .alert(
+      `Extraction complete.\n\n` +
+
+      `${output.length} note` +
+      `${output.length === 1 ? "" : "s"} ` +
+      `extracted from ` +
+
+      `${sourceSheet.getName()}!` +
+      `${range.getA1Notation()}.`
+    );
+}
+
+
+/***************************************************************
+ * CLEAR EXTRACTED NOTES
+ ***************************************************************/
+
+function clearExtractedNotes() {
+  const spreadsheet =
+    SpreadsheetApp.getActiveSpreadsheet();
+
+
+  const outputSheet =
+    spreadsheet.getSheetByName(
+      "Extracted Notes"
+    );
+
+
+  if (!outputSheet) {
+    SpreadsheetApp
+      .getUi()
+      .alert(
+        'There is no "Extracted Notes" sheet to clear.'
+      );
+
+    return;
+  }
+
+
+  outputSheet.clear();
+
+
+  SpreadsheetApp
+    .getUi()
+    .alert(
+      "The Extracted Notes sheet has been cleared."
+    );
+}
