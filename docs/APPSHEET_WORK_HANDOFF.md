@@ -3,6 +3,16 @@ _Last updated: 2026-10-17. This document is the source-of-truth handoff for a ne
 
 
 
+
+## Demo clients added — 2026-10-17
+See [Demo clients and phase transitions](DEMO_CLIENTS_AND_PHASE_TRANSITIONS.md).
+- Added six fictional clients DEMO-C101–DEMO-C106, six matching service episodes, five fictional cases DEMO-CS101–DEMO-CS105. Original data preserved.
+- Verified in synced app: Casey Rivera → Intake; Riley Chen → Research; Quinn Patel → Request; Sam Ellis → Follow Up; Robin Hayes → Graveyard; Alex Parker → both Request and Follow Up with separate cases.
+- Example rows: Clients!A5:I10, ServiceEpisodes!A6:G11, Cases!A8:K12. All examples are fictional.
+- The earlier statement that Follow Up has no example cases is superseded: it now has Sam and Alex.
+- User's target behavior is event-driven progression: staff record intake/research/confirmation, court response, and actual notification events; phases should derive automatically. This is now specified in the linked guide but **not implemented**. Current ClientStage/CasePhase manual controls remain in place.
+- Next work must support current-episode closure, no eligible/no-case paths, and partial sibling-case completion without duplicate client queue membership.
+
 ## Latest verified change — exclusive client lifecycle (2026-10-17)
 
 This section supersedes the case-only filters and unrestricted client views documented in the earlier implementation below. See [Intake and graveyard integration](INTAKE_AND_GRAVEYARD_INTEGRATION.md) for the reviewed source scripts and integration design.
