@@ -1,26 +1,21 @@
 # Intake and graveyard integration
-Updated 2026-10-17. Design decisions and implementation boundary; no operational account connected.
+Updated 2026-10-18. No operational account is connected.
 
-## Current lifecycle
-One durable Clients row has one required ClientStage: Phase 1, Phase 2, Phase 3/4, or Phase 5. It controls primary queue membership. CasePhase only splits an active client's cases between Request and Follow Up. Historical case records remain attached even when a client is active again; they do not place that client in the Graveyard queue.
+## Current lifecycle — implemented
+The existing app now uses **Clients.WorkflowStage**, a virtual calculation from client status and current-episode case statuses. Manual ClientStage instructions are superseded. See [Workflow fields and automatic phases](WORKFLOW_FIELDS_AND_AUTOMATIC_PHASES.md) and [Demo clients and phase transitions](DEMO_CLIENTS_AND_PHASE_TRANSITIONS.md).
 
-| View | Source | Row filter |
-| --- | --- | --- |
-| Intake | Phase1_Clients | [ClientStage] = "Phase 1" |
-| Research | Phase2_Clients | [ClientStage] = "Phase 2" |
-| Request | Phase3_Cases | AND([ClientID].[ClientStage] = "Phase 3/4", [CasePhase] = "Phase 3") |
-| Follow Up | Phase4_Cases | AND([ClientID].[ClientStage] = "Phase 3/4", [CasePhase] = "Phase 4") |
-| Graveyard | Phase5_Clients | [ClientStage] = "Phase 5" |
+- One durable client can be in Intake, Research, active Phase 3/4, or Graveyard exclusively.
+- CaseStatus Ready to Refer appears in Request only for an active client and matching current EpisodeID.
+- Decision in Progress and Follow Up - Approved/Denied appear in Follow Up. **A sent request enters Follow Up immediately.**
+- Completing an individual case requires ClientNotifiedDate; unfinished siblings remain active. The last completed current case moves the client to Graveyard.
+- Client Complete choices are withheld while any current case is unfinished; zero-case closure is explicit.
+- New clients get CurrentEpisodeID = UNIQUEID(); new cases inherit it. ServiceEpisodes remains workbook-only; automatic audit rows and reopening actions are future work.
+- ClientStage is hidden/derived as a legacy physical mirror and can be stale after a child-only edit. Do not use it as the phase authority. CasePhase is derived/read-only; queue filters use CaseStatus directly.
+- Importers must set **ClientStatus = Kiddie Pool**, **DateFormSubmitted**, and **CurrentEpisodeID** for a new completed intake or a confirmed Phase 1 completion. Do not rely on AppSheet initial values/App formulas to run on external Sheet writes.
+- Repeated intakes for active clients must be attached for review without regressing status or replacing CurrentEpisodeID.
 
-Staff update ClientStage on the client detail/edit form:
-- Phase 1: contact received, intake incomplete.
-- Phase 2: form completed or staff enter the completed intake.
-- Phase 3/4: research and client confirmation/contact complete. Assign the current cases their appropriate case phases; changing ClientStage does not bulk-change cases.
-- Phase 5: all current court decisions communicated and current service complete. Do not close the entire client just because one case is complete.
-
-New records from Phase1_Clients_Form default to Phase 1; other new client forms default to Phase 2. Formula:
-`IF(CONTEXT("View") = "Phase1_Clients_Form", "Phase 1", "Phase 2")`.
-ClientStage remains editable and required. DOB initial TODAY() was removed; DOB, phone, and email are optional to support incomplete contacts. Completion validation and guided transition actions remain future work. Current stage changes are staff assertions; the app does not yet verify consent, research, court decisions, or notification completion.
+## Integration proposal — not installed
+The source scripts and operational account boundary below remain applicable. Any older “set ClientStage to Phase 2” wording means write the new structured intake/status fields above, not a manual stage control.
 
 ## Email intake: reuse parsing, replace delivery/replay handling
 Reviewed repository file: `google-intake-form-auto-add`.
@@ -33,7 +28,7 @@ Recommended adapter:
 4. Use an IntakeImports staging/receipt table with stable SourceSubmissionID where available and Gmail MessageID as delivery identity. Track Received, Needs Review, Applied, Error plus ClientID and timestamps. Exclude email bodies and PII from execution logs.
 5. Under a script lock, replay-safe import with stable identifiers: recover partially applied writes rather than appending another client. A read/unread flag is not a deduplication ledger. The current newer_than:3d window can miss mail during downtime and should not be the sole cursor.
 6. Resolve an existing Phase 1 client conservatively. Name + DOB can propose a match; require review for ambiguous/conflicting identities. Phone/name alone must not silently merge clients.
-7. For a new client, or confirmed matching Phase 1 client, store mapped intake fields and set ClientStage to Phase 2. Do not create a case until researched. Research then includes the client on sync.
+7. For a new client, or confirmed matching Phase 1 client, store mapped intake fields, DateFormSubmitted, CurrentEpisodeID and ClientStatus = Kiddie Pool. Do not create a case until researched. Research then includes the client on sync.
 8. Repeated submissions for an already active client must not reset their stage to Phase 2. Attach the new intake to the existing identity for review. Returning completed clients reopen through an explicit staff-reviewed episode so old cases and submission history persist.
 9. Mark the import Applied only after all destination writes succeed. Keep the legacy output until a deliberate cutover. Do not install two ingestion paths writing duplicate clients.
 
