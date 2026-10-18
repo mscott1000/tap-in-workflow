@@ -1,6 +1,24 @@
 # Workflow fields and automatic phases
 Verified in the existing AppSheet app on 2026-10-18.
 
+## Verified phase menus and file order — 2026-10-18
+
+The final tables in the original staff workflow govern these choices. An edit menu includes a current status and relevant forward statuses so a staff member can make the transition by recording the event and saving. Other phases' statuses are not offered.
+
+| File / current phase | Choices available | Ordered fields in the record |
+| --- | --- | --- |
+| Intake client (1) | Sent Form; No Response - NPC; Just Browsing; Kiddie Pool for completed intake; Complete - Ineligible if no open current case | ClientStatus, FirstContactDate, FirstName, LastName, MiddleName, DOB, Phone, Email, TICStaff, PriorTICClient, PriorTICClientReason, Log, DateFormSubmitted, WorkflowStage |
+| Research client (2) | Kiddie Pool; Pool Rules; Deep Dive; Ready to Refer when intake, consent, address and all current-case research pass the gate; Complete - Ineligible if no open current case | ClientStatus, TICWeek, FirstName, LastName, MiddleName, DOB, Phone, Address, Email, PrimaryService, TICStaff, EligibleNotes, IneligibleNotes, PriorTICClient, PriorTICClientReason, Related Cases (detail only), ReferToTBP, ReferToHolland, DateFormSubmitted, ConsentToRequest, AddressConfirmed, Log, WorkflowStage |
+| Request case (3) | Ready to Refer; Decision in Progress; Complete - Referred to City TIC | CaseStatus, Client (reference), CaseNumber, Court, ReasonMissingCourtCategory, ReasonMissingCourtText, NumberOfCounts, ChargeType, ChargeClass, ChargeText, ChargeCategory, BondAmount, AttorneyStatus, AttorneyName, Division, WarrantIssueDate, PriorTICRecall, RequestSentDate, ClientNotifiedDate, NotificationMethod, NotificationNotes, CaseLink, CasePhase |
+| Follow Up case (4) | Decision in Progress; Follow Up - Approved; Follow Up - Denied; Complete - Approved; Complete - Denied | Request case identity/reason/charge/attorney fields, then PAOnCall, PAConsent, WarrantRecalled, NextCourtDate, RequestSentDate, ClientNotifiedDate, NotificationMethod, NotificationNotes, CaseLink, CasePhase |
+| Graveyard client (5) | Complete - Approved; Complete - Denied; Complete - Referred to City TIC; Complete - Ineligible | Status first, then existing historical client/contact/service fields and Related Cases. The source has no separate Phase 5 ordering table. |
+
+Name components are editable in the client file, while the **Name** queue column and linked references show a single full-name label. The virtual `_ComputedName` is still the internal label expression but is excluded as a duplicate standalone file field. `ClientID` is the hidden stable key; its initial value is `UNIQUEID()` for AppSheet-created clients. Seeded demo IDs are explicit and remain unchanged. `CaseID` and `CaseKey` are also hidden; CaseNumber labels case files. This avoids displaying technical identifiers without breaking client–case links.
+
+The standard Cases detail/form also keeps ResearchStatus, Eligible and ResearchNotes between PriorTICRecall and PAOnCall for Phase 2 research. The Phase 3 and Phase 4 files omit those research-only fields in their explicit ordering. DateFormSubmitted is required for active Research/Request client statuses, and direct first-contact Complete - Ineligible does not demand a fictitious intake date. RequestSentDate is required on a sent request; ClientNotifiedDate is required for terminal cases.
+
+The menus and representative detail/form order were checked in the saved staff app with fictional records in every phase. A Quinn case moved 3→4 only after RequestSentDate was entered; its original Ready to Refer status, blank date and Phase 3 were then restored and synced. The final five queues match the handoff. These are AppSheet UI validations; direct Sheet/API imports must independently enforce the same rules.
+
 ## Source and interpretation
 The user's original five-phase staff workflow / Jotform transition document was read in full and used for field selection and status names. The newer requirement for one durable client with independent cases supersedes the original proposal to duplicate/delete form rows by court. One sentence in the original document calls Ready to Refer “Phase 5”; its Phase 3 section and overall workflow identify this as Request. This implementation treats Ready to Refer as Phase 3.
 
@@ -21,7 +39,7 @@ All existing columns and five views remain. Clients has 29 physical columns (A:A
 | Completion / Phase 5 | ClientNotifiedDate; NotificationMethod; NotificationNotes; terminal CaseStatus; client Log and explicit terminal ClientStatus for a zero-case service |
 | Internal workflow | Clients.CurrentEpisodeID; Clients.WorkflowStage (virtual); existing Clients.ClientStage (now hidden and derived); existing Cases.CasePhase (derived and read-only) |
 
-Client and case forms expose these fields for their appropriate work; a queue's compact table/card is not the complete record. Intake's table shows recognizable name, DOB/contact actions, status, first-contact date, staff, prior-client information, log and calculated phase. Research cards show name and status. Request and Follow Up remain case tables grouped by ClientID, using client names. CaseStatus is first in both tables. Follow Up also displays warrant result, next court date, sent date, notification date/method. Full fields remain in detail/edit forms.
+Client and case forms expose these fields for their appropriate work; a queue's compact table/card is not the complete record. Intake's table shows recognizable name, DOB/contact actions, status, first-contact date, staff, prior-client information, log and calculated phase. Research uses an ordered table with status, TIC week, one Name column and contact/service fields. Request and Follow Up remain case tables grouped by ClientID, using client names. CaseStatus is first in both tables. Follow Up also displays warrant result, next court date, sent date, notification date/method. Full fields remain in detail/edit forms.
 
 ClientStatus and CaseStatus use AppSheet list validation for selectable statuses. ConsentToRequest and AddressConfirmed offer Yes / No / Pending. Other categorical fields have source Sheet dropdown validation; many remain AppSheet Text inputs. Prior-client/prior-recall fields are presently Yes/No in AppSheet; they are not an authoritative submission-history check. Demographic fields do not drive eligibility.
 
@@ -46,7 +64,7 @@ To reach case work from Research, open the client and use **Related Cases > Add*
 ### Installed validation and defaults
 - ClientStatus is required. Intake Add defaults to Sent Form; other client forms, including Research Add, default to Kiddie Pool:
   `IF(CONTEXT("View") = "Phase1_Clients_Form", "Sent Form", "Kiddie Pool")`.
-- DateFormSubmitted is required once ClientStatus leaves the three Phase 1 statuses. It starts blank.
+- DateFormSubmitted is required for Kiddie Pool, Pool Rules, Deep Dive and Ready to Refer. It starts blank; direct no-services Complete - Ineligible from Intake does not require a fabricated date.
 - Ready to Refer is offered on the client only when DateFormSubmitted exists, consent/address are Yes, at least one current case exists, and no current case is Kiddie Pool / Pool Rules / Deep Dive.
 - Client Complete choices are withheld while any current case lacks a Complete status.
 - New cases default to Deep Dive. RequestSentDate is required for Decision in Progress / Follow Up - Approved / Follow Up - Denied.
