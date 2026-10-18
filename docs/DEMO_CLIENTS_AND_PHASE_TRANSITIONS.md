@@ -1,60 +1,52 @@
 # Demo clients and phase transitions
-Updated 2026-10-17.
+Updated and verified 2026-10-18. All records are fictional. The existing app, client identities and prior examples remain.
 
-## Added and verified in the existing app
-Six fictional clients were appended to Clients!A5:I10, six matching service episodes to ServiceEpisodes!A6:G11, and five fictional cases to Cases!A8:K12. Original records were preserved. IDs use DEMO prefixes; case numbers use DEMO-ONLY prefixes; case notes explicitly identify fictional scenarios. Contact details are fictional and emails use example.org.
+See [Workflow fields and automatic phases](WORKFLOW_FIELDS_AND_AUTOMATIC_PHASES.md) for the full source-document field mapping, exact formulas, validation and remaining work.
 
-| Client | ClientID | Current view(s) | Scenario |
+## Restored examples
+| Client | ClientID | Current queue(s) | Practice scenario |
 | --- | --- | --- | --- |
-| Casey Rivera | DEMO-C101 | Intake | First contact, intake outstanding, no cases, DOB/email/address blank |
-| Riley Chen | DEMO-C102 | Research | Completed intake, research outstanding, no cases yet |
-| Quinn Patel | DEMO-C103 | Request | One researched/confirmed case; request draft ready, not yet submitted |
-| Sam Ellis | DEMO-C104 | Follow Up | Example court response received; client notification outstanding |
-| Robin Hayes | DEMO-C105 | Graveyard | Example decision communicated, current service complete |
-| Alex Parker | DEMO-C106 | Request and Follow Up | Florissant case awaiting response; Webster Groves case has response and needs notification |
+| Casey Rivera | DEMO-C101 | Intake | Sent Form; incomplete intake; no cases |
+| Riley Chen | DEMO-C102 | Research | Kiddie Pool; newly added DEMO-CS106 is Deep Dive; consent/address Pending |
+| Quinn Patel | DEMO-C103 | Request | DEMO-CS101 Ready to Refer; request draft not sent |
+| Sam Ellis | DEMO-C104 | Follow Up | DEMO-CS102 Follow Up - Approved; warrant recalled/new date recorded; client notification pending |
+| Robin Hayes | DEMO-C105 | Graveyard | DEMO-CS103 Complete - Approved; fictional client notified |
+| Alex Parker | DEMO-C106 | Request and Follow Up | DEMO-CS104 Ready to Refer, not sent; DEMO-CS105 Follow Up - Denied, notification pending |
+| Avery Morgan | DEMO-C001 | Request | DEMO-CS001 ready; ineligible sibling completed; old episode's completed case retained in history |
+| Jordan Lee | DEMO-C002 | Research | Deep Dive; DEMO-CS006 needs verification. Ready DEMO-CS003 remains attached but is withheld from Request while client research remains unfinished |
+| Taylor Brooks | DEMO-C003 | Follow Up | DEMO-CS004 Decision in Progress; fictional request sent, court response pending |
 
-Case IDs DEMO-CS101 through DEMO-CS105 link respectively to Quinn, Sam, Robin, Alex, Alex. Phases are 3, 4, 5, 3, 4. App preview was synced and each view inspected: Casey in Intake; Riley in Research; Quinn and Alex in Request; Sam and Alex in Follow Up; Robin in Graveyard. Existing Request examples remain.
+There are nine clients and twelve cases. DEMO-CS106 was created through Related Cases > Add and retained as a research example. Its saved ClientID/episode link is DEMO-C102/DEMO-E102. Original example ranges remain, with new workflow columns in Clients!J:AC and Cases!L:AG, and the extra case at Cases!A13:AG13.
 
-## How staff move records today
-These are the currently installed controls, not automatic event-driven transitions.
-- From Intake, Research, or Graveyard: open the client, select Edit, change ClientStage, Save.
-- From Request/Follow Up: open the linked client using the client group/ref control, then Edit ClientStage and Save.
-- For an individual case: open its row, Edit, change CasePhase, Save.
-- Phase 1 to Phase 2: change client stage when intake is completed/manually entered.
-- Phase 2 to active: set up researched current cases and set each appropriate CasePhase, then ClientStage = Phase 3/4.
-- Phase 3 to Phase 4: change only the responding case to Phase 4.
-- After notifying the client of a particular case's outcome: that case may be marked Phase 5, while unfinished sibling cases remain in Request/Follow Up.
-- Only when all current matters and required client communications are complete: ClientStage = Phase 5.
-Changing a case phase does not currently update ClientStage. Editing ResearchStatus or notes does not currently trigger a phase transition. The ServiceEpisodes tab is not yet an app table and is not a live stage controller.
+The old Alex description “awaiting response in Request” is superseded: a sent request belongs in Follow Up. Alex's Request example is now explicitly an unsent draft.
 
-## Target behavior: staff record events, app derives the phase
-This section is a proposed next implementation. Its event fields, completion validation, guided actions, and automatic phase computation are NOT yet installed.
+## How a staff member triggers movement
+Open a client or case, select **Edit**, enter the facts/status below, then **Save**. The app calculates phases; staff no longer choose CasePhase or ClientStage.
 
-| Staff records | Preconditions | Automatic result |
-| --- | --- | --- |
-| Intake Completed, with date and source (form or staff entry) | Completed intake attached to confirmed client; ambiguous identity requires review | Client leaves Intake and enters Research |
-| Research Complete and Client Confirmation Complete | All current cases reviewed; required consent/court information captured; no unresolved identity/history issue for cases moving toward a request | Client enters active Phase 3/4; ready current cases appear in Request |
-| Actual request sent | Successful controlled submission with audit record | Case stays in Request as submitted/awaiting response; do not equate draft readiness with submission |
-| Court Decision/Response Received, with received date and outcome | Response verified and attached to that case | Only that case enters Follow Up; sibling cases remain in their own phases |
-| Client Notified, with notification date, method, and interaction record | Outcome recorded and required information actually communicated; attempted call/voicemail is not automatically successful notification | This case is completed; client remains active while another current matter is unfinished |
-| Final outstanding current matter completed | Every current case has a terminal disposition and required explanation/notification; no other service task remains | Whole client appears only in Graveyard |
+| From → to | Staff action |
+| --- | --- |
+| Intake → Research | Complete/manual-enter intake, record DateFormSubmitted, choose client status Kiddie Pool, Save |
+| Within Research | Use client Pool Rules / Deep Dive and update linked cases through Related Cases |
+| Research → Request | Mark each researched request case Ready to Refer; finish other current dispositions; record consent Yes/address confirmed Yes; choose client Ready to Refer and Save |
+| Request → Follow Up | After an actual external request is sent, set that case Decision in Progress, enter RequestSentDate, Save |
+| Court response, still Follow Up | Set Follow Up - Approved or Follow Up - Denied; record PA/recall/new-date information and log the response |
+| Case completed | After informing the client, enter ClientNotifiedDate, method and notes; choose the appropriate Complete status and Save |
+| Last current case → Graveyard | Completing the final current case automatically changes the client queue; no additional client phase edit required |
+| No eligible cases / no cases found → Graveyard | Explain/referral outcome, record client Log and choose the appropriate client Complete status; no fake request or court decision required |
 
-### Required details and edge paths
-- Use explicit event fields with timestamps, staff identity, and linked interactions. Avoid interpreting arbitrary note text as an event.
-- Marking Research Complete should confirm the whole current research scope, including no-case results and ineligible matters, not just one convenient case.
-- Clients with no eligible cases or no cases found need a supported closure path: record research outcome, explanation/referrals communicated, and service completion. They should not acquire a fake court request or wait for a nonexistent court decision.
-- If a court denies a request, it still counts as a prior submission. Record the denial and client notification; never route that case for another submission.
-- Ineligible/researched-only cases have terminal dispositions distinct from submitted cases; notification can mean explaining the ineligibility and referral.
-- Historical cases and old service episodes must not block or prematurely close the current service episode. Link events/cases to a current episode before building all-cases-complete logic.
-- Require explicit completion for zero-case episodes; an empty case list must not automatically mean service is finished.
-- Do not regress an active client to Research merely because another intake arrives. Reopening service requires an explicit current episode while retaining stable ClientID and prior history.
-- Prefer computed stage values from structured events, so one saved event consistently changes queue membership. Account for child-case updates when deriving client completion; if bots are used instead, make them replay-safe and reconcile partial updates.
-- Review closure confirmation and audit behavior before making phase fields read-only. Keep current manual controls until the replacement is tested end-to-end.
-- Phase advancement does not itself transmit a report, send a message, or change a court record. Actual submissions/notifications require their own controlled actions and audit records.
+Completion choices on the client are withheld if current cases remain unfinished. Ready to Refer is withheld until intake date, consent, address confirmation and case research prerequisites are present. Case notification date and sent-request date requirements are enforced. Notification method/notes should be completed but are not yet required automatically.
 
-## Next implementation
-1. Add structured intake/research/confirmation and per-case response/notification fields, and a current-service-episode relationship.
-2. Provide clearly labeled staff actions/forms for those events.
-3. Implement automatic stage derivation with tests for mixed case states, no eligible cases, ambiguous history, denied requests, partial notification, returning clients, and duplicate intake.
-4. Replace manual phase selection only after those tests pass.
-5. Connect the future operational mailbox/graveyard separately, as documented in INTAKE_AND_GRAVEYARD_INTEGRATION.md.
+To find the client from a case, use View Ref (ClientID). To add a case from Research, open the client and use Related Cases > Add.
+
+## Verified in-app exercises
+- Casey could not advance without intake completion date; supplying it moved the same client from Intake to Research.
+- Jordan left Research and both ready cases appeared in Request after client-level readiness was saved. Original uncertain case/status restored afterward.
+- Quinn could not save Decision in Progress without request date. With the date, the case moved to Follow Up and CasePhase became Phase 4.
+- Alex could not complete the denied case without client notification date. Completing that one case left the other request unchanged and did not put Alex in Graveyard. Client Complete choices were absent.
+- Completing Alex's last case moved the client to Graveyard. Both cases then restored to the split practice scenario.
+- Riley's explicit zero-case completion plus explanation log moved to Graveyard; no Ready to Refer choice was available. Restored to Research, then added a fictional research case via the app.
+- Intake Add defaults Sent Form / Phase 1 with blank DOB/intake date; Research Add defaults Kiddie Pool / Phase 2. Both unsaved test forms canceled.
+- Final sync and inspection confirmed every queue in the table above.
+
+## Limits
+Saving a status records a staff assertion; it does not send a court report/message, verify a legal outcome, enforce the one-request rule, or prove notification delivery. Required dates are basic validation rather than an immutable event audit. Do not use direct Sheet writes to bypass form requirements. The future mailbox/history account, import receipts, court submission ledger, structured interactions and guided returning-client episode workflow remain unconnected/unimplemented.
