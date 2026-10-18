@@ -1,0 +1,158 @@
+# Workflow fields and automatic phases
+Verified in the existing AppSheet app on 2026-10-18.
+
+## Source and interpretation
+The user's original five-phase staff workflow / Jotform transition document was read in full and used for field selection and status names. The newer requirement for one durable client with independent cases supersedes the original proposal to duplicate/delete form rows by court. One sentence in the original document calls Ready to Refer “Phase 5”; its Phase 3 section and overall workflow identify this as Request. This implementation treats Ready to Refer as Phase 3.
+
+**Sending the request moves the case to Phase 4 (Decision in Progress).** Recording approval/denial is a further Phase 4 update. Earlier repository proposals that kept sent requests in Phase 3 until a court response are superseded.
+
+No replacement application, operational mailbox/history connection, public deployment, or sharing change was made. All tests used fictional data.
+
+## Fields installed and regenerated
+All existing columns and five views remain. Clients has 29 physical columns (A:AC); Cases has 33 (A:AG). Both AppSheet table schemas were regenerated.
+
+| Scope / phase | Available fields |
+| --- | --- |
+| Client identity, all phases | ClientID; FirstName; LastName; MiddleName; DOB; Phone; Email; Address. Existing computed full-name label and Related Cases retained. |
+| Phase 1 first contact | ClientStatus; TICWeek; FirstContactDate; TICStaff; PriorTICClient; PriorTICClientReason; Log |
+| Phase 2 intake / research | PrimaryService; EligibleNotes; IneligibleNotes; DateFormSubmitted; Race; Gender; Location; ReferralSource; ReferToTBP; ReferToHolland; ConsentToRequest; AddressConfirmed, plus the identity/contact/log fields |
+| Per-case research, Phases 2/3 | CaseID; ClientID; EpisodeID; Court; CaseNumber; CaseKey; AttorneyStatus; ResearchStatus; Eligible; ResearchNotes; CaseStatus; ReasonMissingCourtCategory; ReasonMissingCourtText; NumberOfCounts; ChargeType; ChargeClass; ChargeText; ChargeCategory; BondAmount; AttorneyName; Division; WarrantIssueDate; PriorTICRecall; CaseLink |
+| Phase 4 court request / response | RequestSentDate; PAOnCall; PAConsent; WarrantRecalled; NextCourtDate; CaseStatus |
+| Completion / Phase 5 | ClientNotifiedDate; NotificationMethod; NotificationNotes; terminal CaseStatus; client Log and explicit terminal ClientStatus for a zero-case service |
+| Internal workflow | Clients.CurrentEpisodeID; Clients.WorkflowStage (virtual); existing Clients.ClientStage (now hidden and derived); existing Cases.CasePhase (derived and read-only) |
+
+Client and case forms expose these fields for their appropriate work; a queue's compact table/card is not the complete record. Intake's table shows recognizable name, DOB/contact actions, status, first-contact date, staff, prior-client information, log and calculated phase. Research cards show name and status. Request and Follow Up remain case tables grouped by ClientID, using client names. CaseStatus is first in both tables. Follow Up also displays warrant result, next court date, sent date, notification date/method. Full fields remain in detail/edit forms.
+
+ClientStatus and CaseStatus use AppSheet list validation for selectable statuses. ConsentToRequest and AddressConfirmed offer Yes / No / Pending. Other categorical fields have source Sheet dropdown validation; many remain AppSheet Text inputs. Prior-client/prior-recall fields are presently Yes/No in AppSheet; they are not an authoritative submission-history check. Demographic fields do not drive eligibility.
+
+## What staff save to trigger a phase change
+Open a client or case, choose **Edit**, record the work actually done, select its status, then **Save**. Saving recalculates queue membership. Sync brings the result to other users. Free-text notes alone do not advance phases.
+
+| Work completed | Staff record | Result |
+| --- | --- | --- |
+| First contact, intake outstanding | ClientStatus = Sent Form, No Response - NPC, or Just Browsing; contact/log fields | Phase 1 Intake |
+| Intake completed or fully entered by staff | DateFormSubmitted and ClientStatus = Kiddie Pool | Client leaves Intake for Phase 2 Research |
+| Client confirmation / detailed research | ClientStatus = Pool Rules or Deep Dive; update linked case research | Remains Phase 2 |
+| Each case researched | Appropriate case fields; CaseStatus = Ready to Refer for cases ready for request, or a communicated terminal disposition for ineligible cases | Case is ready, but client remains Research until client-level readiness is saved |
+| All current cases ready, client contacted, consent/address confirmed | ConsentToRequest = Yes; AddressConfirmed = Yes; completed intake date; ClientStatus = Ready to Refer | Client leaves Research; ready current cases appear in Phase 3 Request |
+| Actual request sent through the separate court-report process | CaseStatus = Decision in Progress and RequestSentDate | Only that case moves to Phase 4 Follow Up |
+| Court response received | CaseStatus = Follow Up - Approved or Follow Up - Denied; PA/recall/new-court-date fields and log | Remains Phase 4 until client informed |
+| Outcome/explanation actually communicated | ClientNotifiedDate, NotificationMethod, NotificationNotes; CaseStatus = Complete - Approved, Complete - Denied, Complete - Referred to City TIC, or Complete - Ineligible | Case leaves active queues. Other unfinished cases stay active. |
+| Last current case completed | Complete that final case as above | Whole client moves to Graveyard automatically |
+| Research produces no eligible cases / no cases | Explain outcome/referrals; record client Log; set an appropriate Complete status on the client | Explicit no-case closure to Graveyard; no fake request needed |
+
+To reach case work from Research, open the client and use **Related Cases > Add** or open an existing linked case. To edit client-level confirmation from a Request/Follow Up case, use **View Ref (ClientID)**.
+
+### Installed validation and defaults
+- ClientStatus is required. Intake Add defaults to Sent Form; other client forms, including Research Add, default to Kiddie Pool:
+  `IF(CONTEXT("View") = "Phase1_Clients_Form", "Sent Form", "Kiddie Pool")`.
+- DateFormSubmitted is required once ClientStatus leaves the three Phase 1 statuses. It starts blank.
+- Ready to Refer is offered on the client only when DateFormSubmitted exists, consent/address are Yes, at least one current case exists, and no current case is Kiddie Pool / Pool Rules / Deep Dive.
+- Client Complete choices are withheld while any current case lacks a Complete status.
+- New cases default to Deep Dive. RequestSentDate is required for Decision in Progress / Follow Up - Approved / Follow Up - Denied.
+- ClientNotifiedDate is required for every Complete case status, including ineligible/referral dispositions. Method and notes are available and should be recorded; they are not yet conditionally required.
+- DOB, WarrantIssueDate, NextCourtDate, RequestSentDate, ClientNotifiedDate and intake completion date start blank rather than manufacturing today's date. FirstContactDate / TICWeek retain date defaults.
+- New clients get CurrentEpisodeID = UNIQUEID(). New cases get EpisodeID = [ClientID].[CurrentEpisodeID]. Episode identifiers are hidden from normal forms.
+- ClientStage is hidden and has app formula [WorkflowStage]. It is a legacy physical mirror, not the queue authority: child-only changes can leave its Sheet value stale until the client is updated. Do not use it in integrations as the live phase.
+- CasePhase is read-only and calculated from CaseStatus. Queues use CaseStatus directly, so they do not depend on an old cached CasePhase value.
+
+## Exact queue rules
+Client slices:
+```appsheet
+-- Phase1_Clients
+[WorkflowStage] = "Phase 1"
+-- Phase2_Clients
+[WorkflowStage] = "Phase 2"
+-- Phase5_Clients
+[WorkflowStage] = "Phase 5"
+```
+
+Case slices:
+```appsheet
+-- Phase3_Cases
+AND(
+  [ClientID].[WorkflowStage] = "Phase 3/4",
+  [EpisodeID] = [ClientID].[CurrentEpisodeID],
+  [CaseStatus] = "Ready to Refer"
+)
+-- Phase4_Cases
+AND(
+  [ClientID].[WorkflowStage] = "Phase 3/4",
+  [EpisodeID] = [ClientID].[CurrentEpisodeID],
+  IN([CaseStatus], LIST(
+    "Decision in Progress", "Follow Up - Approved", "Follow Up - Denied"
+  ))
+)
+```
+
+Cases.CasePhase app formula:
+```appsheet
+IFS(
+  STARTSWITH([CaseStatus], "Complete -"), "Phase 5",
+  IN([CaseStatus], LIST(
+    "Decision in Progress", "Follow Up - Approved", "Follow Up - Denied"
+  )), "Phase 4",
+  [CaseStatus] = "Ready to Refer", "Phase 3",
+  TRUE, "Phase 2"
+)
+```
+
+Clients.WorkflowStage virtual app formula:
+```appsheet
+IFS(
+  IN([ClientStatus], LIST("Sent Form", "No Response - NPC", "Just Browsing")), "Phase 1",
+  IN([ClientStatus], LIST("Kiddie Pool", "Pool Rules", "Deep Dive")), "Phase 2",
+  AND(
+    COUNT(SELECT(Cases[CaseID], AND(
+      [ClientID] = [_THISROW].[ClientID],
+      [EpisodeID] = [_THISROW].[CurrentEpisodeID]
+    ))) > 0,
+    COUNT(SELECT(Cases[CaseID], AND(
+      [ClientID] = [_THISROW].[ClientID],
+      [EpisodeID] = [_THISROW].[CurrentEpisodeID],
+      NOT(STARTSWITH([CaseStatus], "Complete -"))
+    ))) = 0
+  ), "Phase 5",
+  AND(
+    STARTSWITH([ClientStatus], "Complete -"),
+    COUNT(SELECT(Cases[CaseID], AND(
+      [ClientID] = [_THISROW].[ClientID],
+      [EpisodeID] = [_THISROW].[CurrentEpisodeID],
+      NOT(STARTSWITH([CaseStatus], "Complete -"))
+    ))) = 0
+  ), "Phase 5",
+  COUNT(SELECT(Cases[CaseID], AND(
+    [ClientID] = [_THISROW].[ClientID],
+    [EpisodeID] = [_THISROW].[CurrentEpisodeID],
+    IN([CaseStatus], LIST("Kiddie Pool", "Pool Rules", "Deep Dive"))
+  ))) > 0, "Phase 2",
+  OR(
+    [ClientStatus] = "Ready to Refer",
+    STARTSWITH([ClientStatus], "Complete -")
+  ), "Phase 3/4",
+  TRUE, "Phase 1"
+)
+```
+
+The virtual client calculation handles child-case saves without requiring a separate client edit. It has one exclusive client result: Phase 1, Phase 2, Phase 3/4, or Phase 5. Only Phase 3/4 can yield two primary queues. CurrentEpisodeID scopes case queues and completion; old case history stays linked but cannot prematurely complete/block the current episode. ServiceEpisodes is still a separate workbook tab, not an AppSheet table or current phase controller; generated episode tokens do not yet create episode audit rows.
+
+## Verified tests in the saved app
+1. Intake Add: Sent Form / Phase 1, blank DOB and completion date; canceled. Research Add: Kiddie Pool / Phase 2, blank completion date; canceled.
+2. Casey: Kiddie Pool without DateFormSubmitted failed “This entry is required.” Adding the date and saving removed Casey from Intake and placed the same ClientID in Research.
+3. Jordan: after preparing both fictional cases as researched/ready, client Ready to Refer became available with consent/address Yes. Saving removed Jordan from Research and displayed both cases in Request. Restored Deep Dive and the uncertain sibling case.
+4. Quinn: Decision in Progress without RequestSentDate failed required validation. Adding the date and saving moved that case from Request to Follow Up, with calculated CasePhase 4.
+5. Alex: Complete - Denied without ClientNotifiedDate failed. Completing that case with date/method/notes left the sibling Ready to Refer request unchanged. Alex was absent from Graveyard; client Complete statuses were not offered.
+6. Completing Alex's final case via the ineligible/explanation path moved the whole client to Graveyard automatically. Restored both cases to the split Phase 3/4 scenario afterward.
+7. Riley, initially no cases: stayed Research until explicit Complete - Ineligible plus log explanation; then appeared in Graveyard. Ready to Refer was not offered. Restored Research afterward.
+8. Added DEMO-CS106 through Riley's Related Cases form: default Deep Dive / Phase 2; blank evidence dates. Verified the actual new Sheet row has ClientID DEMO-C102 and EpisodeID DEMO-E102. Retained as the Research example.
+9. Restored all temporary changes, synced and inspected all five queues; original client and case keys retained.
+
+## Remaining work before operational use
+- Future mailbox/Jotform adapter is not installed. It must map completed intake to ClientStatus Kiddie Pool, supply CurrentEpisodeID and completion date, use stable import receipts, resolve identities conservatively, and not regress active clients. Programmatic Sheet writers must supply/validate required fields themselves; UI Valid_If and initial values do not guard direct API writes.
+- Operational graveyard and previous-record checker are still unconnected. Distinguish confirmed submission, research only, unknown. PriorTICRecall is not a submission ledger; no concurrency-safe one-submission-per-case enforcement exists.
+- Statuses are explicit staff assertions. Choosing Decision in Progress sends no report; choosing Complete sends no message and does not prove a court outcome. Actual sending, delivery verification, immutable timestamps/staff audit and controlled report submission remain separate work.
+- Eligibility, participating courts, private-attorney exclusion and verified historical submission must be checked before any actual request. A Ready status does not itself enforce all of those rules.
+- Structured Interactions remains a workbook-only table; client Log / notification fields are available, but per-interaction audit forms, immutable change history and notification evidence remain to implement.
+- Review binary prior-client/prior-recall and Eligible inputs for explicit unknown/review states, required fields by service/court, and all original categorical options before real-data rollout. The original uncertain Eligible = REVIEW fixture is not a proper tri-state AppSheet type.
+- Reopening a returning client needs a guided episode action and archive/history records; do not overwrite a current episode by a repeated intake.
+- No bots, actual messaging, court report transmission, external-event add-on, operational account transfer or deployment were added. Review ownership, individual staff identity and permissions before cutover.
