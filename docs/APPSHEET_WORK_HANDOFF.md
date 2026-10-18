@@ -1,8 +1,32 @@
 # Tap In Center — AppSheet proof of concept: Work handoff
-_Last updated: 2026-10-17. This document is the source-of-truth handoff for a new ChatGPT Work session. Do not infer that AppSheet editor settings have been deployed merely because Google Sheet columns exist._
+_Last updated: 2026-10-18. The latest verified configuration below is authoritative; historical sections are retained for context._
 
 
 
+
+## Latest verified configuration — automatic phases (2026-10-18)
+
+**This section and [Workflow fields and automatic phases](WORKFLOW_FIELDS_AND_AUTOMATIC_PHASES.md) supersede all manual-phase controls and proposed transition rules below.** Older sections are retained as implementation history.
+
+- Read the original staff workflow / Jotform-transition document in full. Added its client intake/contact/research/referral fields and case research/court-response fields, plus explicit request and notification dates/details.
+- Updated the existing app in place and regenerated both existing tables: Clients 29 physical columns; Cases 33. All original keys, data tabs and five views retained. No replacement, deployment, sharing change, live mailbox or operational graveyard connection.
+- Staff now edit **ClientStatus** or **CaseStatus**, record required evidence fields, and **Save**. Queue membership recalculates automatically; arbitrary note text alone does not advance a record.
+- **Clients.WorkflowStage** is a virtual, exclusive client-stage calculation. It considers statuses and current-episode case completion, including child-case saves. **ClientStage is now hidden and derived**, and must not be used as queue authority or assumed current in the Sheet after child-only changes.
+- Client slices use WorkflowStage = Phase 1 / Phase 2 / Phase 5. Case slices require client WorkflowStage = Phase 3/4, matching current EpisodeID, and the appropriate CaseStatus.
+- Ready to Refer cases → Phase 3 Request. **Decision in Progress / Follow Up - Approved / Follow Up - Denied → Phase 4 Follow Up. Sending a request moves it to Phase 4**, rather than waiting for a court response.
+- CasePhase is now derived/read-only. One case's completion leaves sibling cases active; completing the last current case moves the client to Graveyard. Old episodes do not count. A zero-case client requires explicit completion.
+- Ready to Refer is offered on a client only after completed intake date, consent/address Yes, at least one current case and no current cases still in research. Whole-client Complete choices are withheld while current cases are unfinished.
+- Required evidence: DateFormSubmitted after Intake; RequestSentDate for sent/response statuses; ClientNotifiedDate for terminal case statuses. Evidence dates start blank. Method/notes are available; stricter service/court-specific validation and audit remain future work.
+- New client status defaults: Sent Form from Intake Add; Kiddie Pool elsewhere. CurrentEpisodeID defaults UNIQUEID(); new Cases.EpisodeID defaults [ClientID].[CurrentEpisodeID]. Internal episode identifiers are hidden.
+- Request/Follow Up remain tables grouped by human-readable ClientID. CaseStatus is first; Follow Up additionally exposes result/date/notification fields. Intake has a concise first-contact table; Research cards show status. Full record fields remain available in forms/details.
+- Verified through the staff app: intake completion validation and 1→2; researched/confirmed client 2→3; required request date and 3→4; required notification date; partial sibling completion; blocked premature client completion; final-case 3/4→5; explicit no-case closure. Temporary state changes restored.
+- Added one additional fictional research case, DEMO-CS106, through Riley's Related Cases form. Verified Cases!A13:AG13 includes DEMO-C102 / DEMO-E102, Deep Dive / Phase 2 and blank event dates. Nine fictional clients and twelve cases now remain.
+- Final synced queues: Intake Casey; Research Jordan/Riley; Request Alex/Avery/Quinn; Follow Up Alex/Sam/Taylor; Graveyard Robin. Alex's two cases remain independently linked to the same client.
+- Jotform/email intake auto-population, operational graveyard lookup, one-submission ledger, controlled report sending, structured interaction audit, returning-client reopening, permissions/account cutover and production deployment remain unfinished. Status changes do not send messages or court reports and are not independent proof of eligibility or delivery.
+
+See [Demo clients and phase transitions](DEMO_CLIENTS_AND_PHASE_TRANSITIONS.md) for staff instructions and [Intake and graveyard integration](INTAKE_AND_GRAVEYARD_INTEGRATION.md) for the future account integration boundary.
+
+## Historical configuration and prior implementation notes
 
 ## Demo clients added — 2026-10-17
 See [Demo clients and phase transitions](DEMO_CLIENTS_AND_PHASE_TRANSITIONS.md).
