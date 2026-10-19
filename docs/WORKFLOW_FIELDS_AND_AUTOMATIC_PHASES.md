@@ -1,6 +1,22 @@
 # Workflow fields and automatic phases
 Verified in the existing AppSheet app on 2026-10-18.
 
+## Current saved workflow — 2026-10-19
+
+This section supersedes the older menus, phase visibility, Request grouping, and Graveyard field list below. See [the handoff](APPSHEET_WORK_HANDOFF.md#current-verified-configuration--2026-10-19) for the staff-app verification and remaining integration work.
+
+| Scope | Current behavior |
+| --- | --- |
+| Client stage | Only Intake, Research, combined Request/Follow Up, or Graveyard at one time. A current-episode case still in Check Cases/Need to Contact holds the client in Research; after research, sibling cases can split between Request and Follow Up. All current cases terminal moves the client to Graveyard. |
+| Client statuses | Sent Form, No Response - NPC, Just Browsing for Intake; Check Cases and Need to Contact for Research, with Ready to Refer as the handoff. Historical Kiddie Pool, Deep Dive, Pool Rules aliases remain in the stage formula for migration, but are absent from new menus. |
+| Case Status | One dropdown in each case detail exposes Check Cases, Need to Contact, Ready to Refer, Decision in Progress, Follow Up - Approved, Follow Up - Denied, Complete - Approved, Complete - Denied, Complete - Referred to City TIC, Complete - Ineligible. Status sets the per-case phase, and a test case moved 3→4→3 after two saved changes. |
+| Case court | `Cases.Court` is the Jurisdiction dropdown with the nine court names in the current handoff. Request rows group by Court. |
+| Hidden technical fields | Phase calculations, client/case IDs, and standalone `_ComputedName` are hidden from staff rows/details. `ClientID` still uses `UNIQUEID()` as the initial value for AppSheet-created clients; `_ComputedName` still labels references internally. |
+| Other UI changes | Prior TIC Client? is now Prior Client?, and binary client/case choices display No/Yes. ConsentToRequest and AddressConfirmed are hidden and removed from the Ready to Refer gate. Date Form Submitted is absent from the Research expanded detail but remains in its table/edit workflow. Case detail layout is side-by-side. |
+| Graveyard | The exact 22-column order and alias/source mapping are in the current handoff. New source fields are blank in the fictional records unless an existing field is mirrored. |
+
+**Validation finding:** The case detail quick-edit dropdown permitted Decision in Progress with a blank RequestSentDate. The fictional test case was restored to Ready to Refer. The older statement that every such transition is date-gated is superseded for this path. Add an enforced transition rule/action before operational use, and test the quick-edit path and direct imports. The live mailbox and historical graveyard source remain unconnected; no sensitive operational records were added.
+
 ## Saved display update — 2026-10-19
 
 The live app's five existing views were retained. The staff-facing column titles and ordering now follow the 2026-10-19 section of [the handoff](APPSHEET_WORK_HANDOFF.md). Intake and Research show separate First Name and Last Name fields; Request and Follow Up show a single linked Name, and their expanded case files show client fields from read-only reference expressions. Phase is shown in Intake's listing and only in the expanded file for Research, Request and Follow Up. The technical IDs and standalone computed name are not displayed in those layouts. Phone, email and address display as text columns without generated contact/map actions. The ten Primary Service choices were verified in the edit form; the conditional free-text field for Other remains to implement.
