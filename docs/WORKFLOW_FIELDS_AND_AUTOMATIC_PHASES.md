@@ -1,5 +1,5 @@
 # Workflow fields and automatic phases
-Verified in the existing AppSheet app on 2026-10-18.
+Verified in the existing AppSheet app through 2026-10-19.
 
 ## Current saved workflow — 2026-10-19
 
