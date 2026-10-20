@@ -1,5 +1,80 @@
 # Workflow fields and automatic phases
-Verified in the existing AppSheet app through 2026-10-19.
+Verified in the existing AppSheet app through 2026-10-20.
+
+## Authoritative staff-interface configuration — 2026-10-20
+
+This section supersedes older field-order, phase-visibility, status-menu, quick-edit, and validation descriptions later in this file. The five existing views, source tables, IDs, relationships, and automatic phase formulas were retained.
+
+### Status editing and phase movement
+
+Status is displayed as ordinary text in a client or case detail. A staff member must choose **Edit** before the status becomes a dropdown. The dropdown is required, has no clear (X) control, and exposes the same ten case-workflow choices wherever the unified status menu is used:
+
+1. Check Cases
+2. Need to Contact
+3. Ready to Refer
+4. Decision in Progress
+5. Follow Up - Approved
+6. Follow Up - Denied
+7. Complete - Approved
+8. Complete - Denied
+9. Complete - Referred to City TIC
+10. Complete - Ineligible
+
+The saved status remains the phase trigger:
+
+| Status | Resulting queue |
+| --- | --- |
+| Check Cases; Need to Contact | Phase 2 — Research |
+| Ready to Refer | Phase 3 — Request |
+| Decision in Progress; Follow Up - Approved; Follow Up - Denied | Phase 4 — Follow Up |
+| Complete - Approved; Complete - Denied; Complete - Referred to City TIC; Complete - Ineligible | Phase 5 — Graveyard after all current-episode cases are terminal |
+
+Legacy intake-only client statuses (Sent Form, No Response - NPC, and Just Browsing) continue to hold a client in Phase 1. The technical phase value is hidden in rows, details, and edit forms. Staff change the recorded status and save; the existing formulas recalculate queue membership. Cases remain independent children of the same client, so siblings can occupy Request and Follow Up simultaneously while the client exists in only the combined Phase 3/4 stage.
+
+### Status colors
+
+| Status | Saved color |
+| --- | --- |
+| Check Cases | Purple — #7E57C2 |
+| Need to Contact | Light red — #EF9A9A |
+| Ready to Refer | Light green — #81C784 |
+| Decision in Progress | Light blue — #64B5F6 |
+| Follow Up - Approved | Gold/dark yellow — #C9A227 |
+| Follow Up - Denied | Light yellow — #FFF176 |
+| Complete - Approved | Dark green — #2E7D32 |
+| Complete - Denied | Dark grey — #616161 |
+| Complete - Referred to City TIC | Dark blue — #1565C0 |
+| Complete - Ineligible | Light grey — #BDBDBD |
+
+Twenty format rules target the status columns specifically: one client rule and one case rule per status. Live verification confirmed the expected RGB styling for Ready to Refer and Need to Contact.
+
+### Verified fields and layouts
+
+- All five detail views use the side-by-side desktop layout.
+- **TIC Staff** is a fixed dropdown in this order: Anna, Dylan, Kyle, Mason, Miranda, Tanya, None.
+- **Eligible - Notes** and **Ineligible - Notes** are multiline LongText inputs.
+- **Contact Log** is available in the requested phase tables and edit forms.
+- **Middle** is present after Last Name in Intake and Research.
+- Research excludes Primary Service, Date Form Submitted, ConsentToRequest, and AddressConfirmed from its staff edit form.
+- Request begins with: Status, Case #, Name, Contact Log, Jurisdiction. It is grouped by Court/Jurisdiction and excludes Research Status, Eligible, ResearchNotes, Notification Notes, and the redundant Client column.
+- Follow Up excludes Prior TIC Recall?. **Warrant Recalled?** is a required dropdown with Yes, No, N/A, Pending.
+- Graveyard uses this table and form sequence: TIC Week; First Name; Last Name; Middle; Contact Log; DOB; Eligible Cases; Ineligible Cases; Phone Number; Mailing Address; City; State; Zip Code; Email Address; Court Date Obtained; Primary Contact Method; Contact History; Notes; Online Form?; Location; Race; Gender; Referral Source. Online Form? is Yes/No, Court Date Obtained is a date input, and Notes is editable multiline text.
+- Technical IDs, the standalone computed-name field, and phase fields remain hidden. Names shown to staff are recognizable display values; hidden ClientID continues to provide the durable relationship key.
+- Contact/map action icons and map features remain absent from these staff layouts.
+
+### Verification performed
+
+All checks used existing fictional records. Forms were opened to inspect control types, choices, required/clear behavior, and field order, then canceled; the records were not modified. The Request queue was verified grouped by jurisdiction with the required first five columns. Follow Up's Warrant Recalled? options and Graveyard's complete field order were verified live. AppSheet reported no configuration warnings after save.
+
+### Remaining operational work
+
+- Connect and validate the future operational mailbox/Jotform intake adapter under the final organizational Google account.
+- Connect the historical Graveyard source and previous-record checker with conservative identity matching and explicit review states.
+- Re-test and enforce evidence/date requirements for every status transition, including direct Sheet/API imports. The interface now uses Edit forms rather than quick-edit status controls, but AppSheet UI validation alone does not protect external writers.
+- Implement an immutable interaction/audit trail, controlled court-request submission, notification evidence, and production permissions.
+- Finish conditional free text for Primary Service = Other wherever that field remains operationally applicable.
+
+No sensitive client data, credentials, or operational records are documented here.
 
 ## Current saved workflow — 2026-10-19
 
