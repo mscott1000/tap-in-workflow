@@ -1,12 +1,21 @@
 # Tap In Center — AppSheet proof of concept: Work handoff
 _Last updated: 2026-10-19. The latest verified configuration below is authoritative; historical sections are retained for context._
 
+## Verified status-menu, icon, and multi-jurisdiction test — 2026-10-20
+
+- Status colors remain active, but the optional format-rule icons are now cleared for all 20 client/case status rules. Live verification showed `Need to Contact` as light red text with no leading status icon.
+- Intake (Phase 1) offers 13 status choices: `Sent Form`, `No Response - NPC`, `Just Browsing`, plus all ten shared workflow statuses. This lets staff move an intake client forward or close/reclassify it without exposing the Phase field.
+- Research, Request, Follow Up, and Graveyard edit menus use the ten shared workflow statuses only: `Check Cases`; `Need to Contact`; `Ready to Refer`; `Decision in Progress`; `Follow Up - Approved`; `Follow Up - Denied`; `Complete - Approved`; `Complete - Denied`; `Complete - Referred to City TIC`; `Complete - Ineligible`. Arbitrary values and auto-completion of other values are disabled.
+- The existing status-to-phase formulas and queue slices remain authoritative. Queue membership is narrower than the edit menu: Intake shows the three intake statuses; Research shows Check Cases/Need to Contact; Request shows Ready to Refer; Follow Up shows Decision in Progress and both Follow Up outcomes; Graveyard shows the four Complete statuses.
+- Added one explicitly fictional client, `Taylor Q Example` (`ClientID=f81d7822`, `CurrentEpisodeID=a9e9b19d`), and three linked fictional cases for testing: `DEMO-MULTI-CITY-001` in City of St. Louis Municipal / Request, `DEMO-MULTI-FLORISSANT-002` in Florissant / Follow Up, and `DEMO-MULTI-COUNTY-003` in St. Louis County Circuit / Follow Up. The live app verified that the same recognizable client name appears on each case, while each case routes independently by its own status and Request remains grouped by Court.
+- No production client data, mailbox connection, or operational graveyard data was added.
+
 ## Verified staff-interface update — 2026-10-20
 
 This section supersedes earlier interface-layout, status-menu, and format-rule descriptions. The existing application, Google Sheet, keys, five primary views, and fictional demonstration records were preserved.
 
 - Phase/technical fields are hidden from staff rows, details, and forms. `ClientID`, `CaseID`, episode IDs, `CasePhase`, `WorkflowStage`, and the standalone computed-name field remain internal. Staff move records by editing Status and saving; phase membership recalculates from the existing client/case formulas.
-- Status is display-only in every expanded detail and becomes a required dropdown only after **Edit**. The dropdown has no clear control and contains all ten shared workflow statuses: Check Cases; Need to Contact; Ready to Refer; Decision in Progress; Follow Up - Approved; Follow Up - Denied; Complete - Approved; Complete - Denied; Complete - Referred to City TIC; Complete - Ineligible.
+- Status is display-only in every expanded detail and becomes a required dropdown only after **Edit**. Intake offers its three intake statuses plus the ten shared workflow statuses; the other client/case forms offer the ten shared workflow statuses. The field remains required, so clearing a value cannot produce a valid saved record.
 - Format rules now target the actual `ClientStatus` or `CaseStatus` column. Verified colors: Check Cases purple; Need to Contact light red; Ready to Refer light green; Decision in Progress light blue; Follow Up - Approved gold/dark yellow; Follow Up - Denied light yellow; Complete - Approved dark green; Complete - Denied dark grey; Complete - Referred to City TIC dark blue; Complete - Ineligible light grey.
 - Client details and case details open side-by-side. Contact Log is a physical, editable field displayed as **Contact Log**. Eligible - Notes and Ineligible - Notes are LongText and render as multiline editors.
 - TIC Staff is an exact dropdown in this order: Anna, Dylan, Kyle, Mason, Miranda, Tanya, None. Warrant Recalled? is an exact dropdown in this order: Yes, No, N/A, Pending. The stale AppSheet spreadsheet-formula metadata on Clients.Notes was cleared, and Notes is verified as an editable multiline Phase 5 field.
