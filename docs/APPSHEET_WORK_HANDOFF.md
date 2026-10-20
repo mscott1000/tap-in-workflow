@@ -1,3 +1,5 @@
+> **New approved directives (2026-10-20):** [Phase Two, identity, export, and interactions implementation specification](PHASE_TWO_IDENTITY_EXPORT_INTERACTIONS_2026-10-20.md). This supersedes conflicting older directions about generated IDs and Phase Two's client-only presentation. These are **not yet implemented in the live AppSheet editor**; mandatory identity/reference migration checks apply.
+
 # Tap In Center — AppSheet proof of concept: Work handoff
 _Last updated: 2026-10-20. The latest verified configuration below is authoritative; historical sections are retained for context._
 
