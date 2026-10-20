@@ -1,6 +1,24 @@
 # Workflow fields and automatic phases
 Verified in the existing AppSheet app through 2026-10-20.
 
+## Verified status availability and multi-court test — 2026-10-20
+
+The saved AppSheet configuration now separates what staff may choose from what each queue displays:
+
+| Staff edit context | Status choices | Queue membership |
+| --- | --- | --- |
+| Phase 1 Intake client | Sent Form; No Response - NPC; Just Browsing; all ten shared workflow statuses | Sent Form; No Response - NPC; Just Browsing |
+| Phase 2 Research client | The ten shared workflow statuses | Check Cases; Need to Contact |
+| Phase 3 Request case | The ten shared workflow statuses | Ready to Refer |
+| Phase 4 Follow Up case | The ten shared workflow statuses | Decision in Progress; Follow Up - Approved; Follow Up - Denied |
+| Phase 5 Graveyard client | The ten shared workflow statuses | Complete - Approved; Complete - Denied; Complete - Referred to City TIC; Complete - Ineligible |
+
+The ten shared statuses are Check Cases, Need to Contact, Ready to Refer, Decision in Progress, Follow Up - Approved, Follow Up - Denied, Complete - Approved, Complete - Denied, Complete - Referred to City TIC, and Complete - Ineligible. The lists are saved as restricted dropdowns; arbitrary other values and auto-completion are disabled. Phase remains hidden, and the existing status-derived formulas move a record after staff saves a new status.
+
+All client and case status format rules retain their configured text colors and have no status icon selected. Live verification confirmed light-red `Need to Contact` text without a leading icon.
+
+A new fictional test client, `Taylor Q Example`, is linked to three fictional cases in different jurisdictions. `DEMO-MULTI-CITY-001` is Ready to Refer in City of St. Louis Municipal and appears in Request. `DEMO-MULTI-FLORISSANT-002` is Decision in Progress in Florissant, while `DEMO-MULTI-COUNTY-003` is Follow Up - Approved in St. Louis County Circuit; both appear independently in Follow Up. The same `ClientID` and current `EpisodeID` link all three records, proving that phase movement is per case while identity remains shared. All test text is explicitly marked fictional.
+
 ## Authoritative staff-interface configuration — 2026-10-20
 
 This section supersedes older field-order, phase-visibility, status-menu, quick-edit, and validation descriptions later in this file. The five existing views, source tables, IDs, relationships, and automatic phase formulas were retained.
