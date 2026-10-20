@@ -1,9 +1,9 @@
 # Tap In Center — AppSheet proof of concept: Work handoff
-_Last updated: 2026-10-19. The latest verified configuration below is authoritative; historical sections are retained for context._
+_Last updated: 2026-10-20. The latest verified configuration below is authoritative; historical sections are retained for context._
 
 ## Verified status-menu, icon, and multi-jurisdiction test — 2026-10-20
 
-- Status colors remain active, but the optional format-rule icons are now cleared for all 20 client/case status rules. Live verification showed `Need to Contact` as light red text with no leading status icon.
+- Status colors remain active, but the optional pictogram icons are now cleared for all 20 client/case status rules. Live verification showed `Need to Contact` as light red text without the old car/cubes pictogram. AppSheet still renders its native small color swatch beside color-formatted cells; that swatch is part of the preserved color treatment, not a selected format-rule icon.
 - Intake (Phase 1) offers 13 status choices: `Sent Form`, `No Response - NPC`, `Just Browsing`, plus all ten shared workflow statuses. This lets staff move an intake client forward or close/reclassify it without exposing the Phase field.
 - Research, Request, Follow Up, and Graveyard edit menus use the ten shared workflow statuses only: `Check Cases`; `Need to Contact`; `Ready to Refer`; `Decision in Progress`; `Follow Up - Approved`; `Follow Up - Denied`; `Complete - Approved`; `Complete - Denied`; `Complete - Referred to City TIC`; `Complete - Ineligible`. Arbitrary values and auto-completion of other values are disabled.
 - The existing status-to-phase formulas and queue slices remain authoritative. Queue membership is narrower than the edit menu: Intake shows the three intake statuses; Research shows Check Cases/Need to Contact; Request shows Ready to Refer; Follow Up shows Decision in Progress and both Follow Up outcomes; Graveyard shows the four Complete statuses.
@@ -20,7 +20,7 @@ This section supersedes earlier interface-layout, status-menu, and format-rule d
 - Client details and case details open side-by-side. Contact Log is a physical, editable field displayed as **Contact Log**. Eligible - Notes and Ineligible - Notes are LongText and render as multiline editors.
 - TIC Staff is an exact dropdown in this order: Anna, Dylan, Kyle, Mason, Miranda, Tanya, None. Warrant Recalled? is an exact dropdown in this order: Yes, No, N/A, Pending. The stale AppSheet spreadsheet-formula metadata on Clients.Notes was cleared, and Notes is verified as an editable multiline Phase 5 field.
 - Intake includes Middle and Contact Log in its configured table/detail/form layouts. Research includes Middle and Contact Log; Primary Service, Date Form Submitted, ConsentToRequest, and AddressConfirmed are removed from its staff edit form. Phase 3 starts Status, Case #, Name, Contact Log, Jurisdiction and is grouped by Court/Jurisdiction. Phase 4 removes Prior TIC Recall? and uses the **Warrant Recalled?** label. Graveyard uses: TIC Week, First Name, Last Name, Middle, Contact Log, DOB, Eligible Cases, Ineligible Cases, Phone Number, Mailing Address, City, State, Zip Code, Email Address, Court Date Obtained, Primary Contact Method, Contact History, Notes, Online Form?, Location, Race, Gender, Referral Source.
-- Live verification used only the existing fictional records. Phase 3 showed court groups and green Ready to Refer statuses; Phase 4 showed gold Follow Up - Approved statuses; Research showed multiline notes and the exact staff menu; Phase 5 showed the requested form order, date control, Yes/No Online Form menu, and editable Notes. Test forms were canceled without changing fictional records.
+- Live verification used fictional records only, including the newly created Taylor multi-jurisdiction fixture documented above. Phase 3 showed court groups and green Ready to Refer statuses; Phase 4 showed gold Follow Up - Approved statuses; Research showed multiline notes and the exact staff menu; Phase 5 showed the requested form order, date control, Yes/No Online Form menu, and editable Notes.
 
 ### Remaining work
 
