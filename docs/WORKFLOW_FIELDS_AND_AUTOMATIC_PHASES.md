@@ -15,7 +15,7 @@ The saved AppSheet configuration now separates what staff may choose from what e
 
 The ten shared statuses are Check Cases, Need to Contact, Ready to Refer, Decision in Progress, Follow Up - Approved, Follow Up - Denied, Complete - Approved, Complete - Denied, Complete - Referred to City TIC, and Complete - Ineligible. The lists are saved as restricted dropdowns; arbitrary other values and auto-completion are disabled. Phase remains hidden, and the existing status-derived formulas move a record after staff saves a new status.
 
-All client and case status format rules retain their configured text colors and have no status icon selected. Live verification confirmed light-red `Need to Contact` text without a leading icon.
+All client and case status format rules retain their configured text colors and have no pictogram icon selected. Live verification confirmed light-red `Need to Contact` text without the old car/cubes pictogram. AppSheet retains its native small color swatch beside color-formatted cells; that swatch is the preserved color indicator rather than a selected format-rule icon.
 
 A new fictional test client, `Taylor Q Example`, is linked to three fictional cases in different jurisdictions. `DEMO-MULTI-CITY-001` is Ready to Refer in City of St. Louis Municipal and appears in Request. `DEMO-MULTI-FLORISSANT-002` is Decision in Progress in Florissant, while `DEMO-MULTI-COUNTY-003` is Follow Up - Approved in St. Louis County Circuit; both appear independently in Follow Up. The same `ClientID` and current `EpisodeID` link all three records, proving that phase movement is per case while identity remains shared. All test text is explicitly marked fictional.
 
@@ -25,7 +25,7 @@ This section supersedes older field-order, phase-visibility, status-menu, quick-
 
 ### Status editing and phase movement
 
-Status is displayed as ordinary text in a client or case detail. A staff member must choose **Edit** before the status becomes a dropdown. The dropdown is required, has no clear (X) control, and exposes the same ten case-workflow choices wherever the unified status menu is used:
+Status is displayed as ordinary text in a client or case detail. A staff member must choose **Edit** before the status becomes a dropdown. The dropdown is required. Research and later phases expose the same ten shared workflow choices; Intake adds Sent Form, No Response - NPC, and Just Browsing:
 
 1. Check Cases
 2. Need to Contact
