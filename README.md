@@ -17,3 +17,5 @@ Make each court case move **independently** through AppSheet phases while remain
 - **No real client personal/legal data, credentials, API tokens, or unreviewed production script dumps in GitHub.**
 - This repository does **not** deploy or configure the AppSheet interface by itself; AppSheet UI changes require authenticated editor access.
 - The existing website Jotform intake, historical Google Sheets “graveyard”, and court-research automations should remain intact during the prototype.
+
+**Latest approved changes (2026-10-20):** [Phase Two grouped case entry, case/client ID migration, Add to Export, status formatting, and Interactions contact log](docs/PHASE_TWO_IDENTITY_EXPORT_INTERACTIONS_2026-10-20.md). These are implementation directives **pending changes in the authenticated AppSheet editor**, not live app changes.
