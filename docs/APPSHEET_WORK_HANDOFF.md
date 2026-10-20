@@ -1,6 +1,24 @@
 # Tap In Center — AppSheet proof of concept: Work handoff
 _Last updated: 2026-10-19. The latest verified configuration below is authoritative; historical sections are retained for context._
 
+## Verified staff-interface update — 2026-10-20
+
+This section supersedes earlier interface-layout, status-menu, and format-rule descriptions. The existing application, Google Sheet, keys, five primary views, and fictional demonstration records were preserved.
+
+- Phase/technical fields are hidden from staff rows, details, and forms. `ClientID`, `CaseID`, episode IDs, `CasePhase`, `WorkflowStage`, and the standalone computed-name field remain internal. Staff move records by editing Status and saving; phase membership recalculates from the existing client/case formulas.
+- Status is display-only in every expanded detail and becomes a required dropdown only after **Edit**. The dropdown has no clear control and contains all ten shared workflow statuses: Check Cases; Need to Contact; Ready to Refer; Decision in Progress; Follow Up - Approved; Follow Up - Denied; Complete - Approved; Complete - Denied; Complete - Referred to City TIC; Complete - Ineligible.
+- Format rules now target the actual `ClientStatus` or `CaseStatus` column. Verified colors: Check Cases purple; Need to Contact light red; Ready to Refer light green; Decision in Progress light blue; Follow Up - Approved gold/dark yellow; Follow Up - Denied light yellow; Complete - Approved dark green; Complete - Denied dark grey; Complete - Referred to City TIC dark blue; Complete - Ineligible light grey.
+- Client details and case details open side-by-side. Contact Log is a physical, editable field displayed as **Contact Log**. Eligible - Notes and Ineligible - Notes are LongText and render as multiline editors.
+- TIC Staff is an exact dropdown in this order: Anna, Dylan, Kyle, Mason, Miranda, Tanya, None. Warrant Recalled? is an exact dropdown in this order: Yes, No, N/A, Pending. The stale AppSheet spreadsheet-formula metadata on Clients.Notes was cleared, and Notes is verified as an editable multiline Phase 5 field.
+- Intake includes Middle and Contact Log in its configured table/detail/form layouts. Research includes Middle and Contact Log; Primary Service, Date Form Submitted, ConsentToRequest, and AddressConfirmed are removed from its staff edit form. Phase 3 starts Status, Case #, Name, Contact Log, Jurisdiction and is grouped by Court/Jurisdiction. Phase 4 removes Prior TIC Recall? and uses the **Warrant Recalled?** label. Graveyard uses: TIC Week, First Name, Last Name, Middle, Contact Log, DOB, Eligible Cases, Ineligible Cases, Phone Number, Mailing Address, City, State, Zip Code, Email Address, Court Date Obtained, Primary Contact Method, Contact History, Notes, Online Form?, Location, Race, Gender, Referral Source.
+- Live verification used only the existing fictional records. Phase 3 showed court groups and green Ready to Refer statuses; Phase 4 showed gold Follow Up - Approved statuses; Research showed multiline notes and the exact staff menu; Phase 5 showed the requested form order, date control, Yes/No Online Form menu, and editable Notes. Test forms were canceled without changing fictional records.
+
+### Remaining work
+
+- The production intake mailbox/Jotform adapter, operational historical/graveyard sheet, prior-record checker, permissions/account cutover, and production deployment remain unconnected.
+- Status selection remains a staff assertion: it does not send a court request or client notification. Before operational use, enforce evidence/date requirements on every status-update path (including edits, imports, and direct Sheet/API writes), add an immutable interaction/audit trail, and retest multi-case closure.
+- Primary Service “Other” still needs its conditional explanation field. Phase-specific staff forms should be rechecked after future schema changes because AppSheet regeneration can reintroduce source-derived metadata.
+
 
 
 
