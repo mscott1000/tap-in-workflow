@@ -6,7 +6,7 @@ Private project workspace for a **Google AppSheet-centered proof of concept** su
 
 **[AppSheet project handoff and technical context](docs/APPSHEET_WORK_HANDOFF.md)** — mission and phases, live prototype data schema, current state, AppSheet changes to implement in a Work browser session, existing scripts, and security requirements.
 
-**[Prototype Google Sheet](https://docs.google.com/spreadsheets/d/1Yhol_3USiPmUNNhz6Mmyou2ArJ93WAlCdEKzNfi5TD8/edit)** — synthetic/test-only data; five worksheets (`Clients`, `ServiceEpisodes`, `Cases`, `Interactions`, `HistoricalCaseIndex`).
+**[Prototype Google Sheet](https://docs.google.com/spreadsheets/d/1Yhol_3USiPmUNNhz6Mmyou2ArJ93WAlCdEKzNfi5TD8/edit)** — synthetic/test-only data; six worksheets (`Clients`, `ServiceEpisodes`, `Cases`, `Interactions`, `HistoricalCaseIndex`, `ExportSelections`).
 
 ## Immediate feature
 
