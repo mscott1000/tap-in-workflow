@@ -1,5 +1,5 @@
 # Phase Two case entry, identity, export, and interaction log — approved change specification
-_Approved user directives: 2026-10-20. Implementation status: **specified in GitHub, not yet applied to the live AppSheet editor or source spreadsheet**._
+_Approved user directives: 2026-10-20. Implementation status updated 2026-10-21: applied to the existing fictional AppSheet prototype and source workbook; see [live implementation, verification and remaining limits](LIVE_IMPLEMENTATION_2026-10-21.md). Production enforcement and integrations remain pending. The checklist below is the original acceptance checklist, not a statement that every production guardrail has passed._
 
 ## Priority and architectural decisions
 This document supersedes conflicting historical handoff instructions, especially the directives to keep `UNIQUEID()`-based ClientID and CaseID indefinitely, to keep Phase Two exclusively as a client-only row view, and to use a freeform editable Contact Log as the source of interaction history. Preserve the existing five phases, status mappings, independent case transitions, court grouping in Request, and historical one-submission-per-case safeguard.
