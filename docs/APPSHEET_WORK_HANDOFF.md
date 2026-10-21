@@ -1,7 +1,9 @@
+> **Latest live state (2026-10-21):** [Live implementation and verification](LIVE_IMPLEMENTATION_2026-10-21.md). The Phase Two name/grouped-case entry, fictional identity/reference migration, case-number key, draft export selection/removal/CSV, status coverage, and structured Interactions workflow are now saved in the existing AppSheet prototype. Production integrations and an authoritative submission ledger remain pending. This section supersedes conflicting historical descriptions below.
+
 > **New approved directives (2026-10-20):** [Phase Two, identity, export, and interactions implementation specification](PHASE_TWO_IDENTITY_EXPORT_INTERACTIONS_2026-10-20.md). This supersedes conflicting older directions about generated IDs and Phase Two's client-only presentation. These are **not yet implemented in the live AppSheet editor**; mandatory identity/reference migration checks apply.
 
 # Tap In Center — AppSheet proof of concept: Work handoff
-_Last updated: 2026-10-20. The latest verified configuration below is authoritative; historical sections are retained for context._
+_Last updated: 2026-10-21. The latest verified configuration below is authoritative; historical sections are retained for context._
 
 ## Verified status-menu, icon, and multi-jurisdiction test — 2026-10-20
 
