@@ -1,5 +1,20 @@
 # ClientInstance migration handoff — 2026-10-22
 
+## Terminology and intake model — user clarification, 2026-10-22
+
+This section supersedes the earlier row terminology and Phase 1/2 creation scope. Staff-facing interactable rows are **ClientInstance Row** and **Case Row**. Remove generic "Client" labels from menus, forms, headings, and actions. A hidden identity registry may replace the current Clients table internally (suggested name ClientIdentityIndex); ClientID remains a hidden link, not a staff-facing row type.
+
+- ClientInstance Rows may exist in all five phases. A Case Row may exist only in Phases 2–5. One ClientInstance represents one intake/week and has its own current contact details, notes, source, phase, and identity-review state.
+- A case has its own stable CaseID and an EpisodeID Ref to exactly one ClientInstance. The same ClientInstance must be visibly selectable/editable above its phase-specific cases wherever any of its cases appear. When cases diverge among phases, the same parent is projected into each relevant view; editing it updates shared data without changing other instances of that person.
+- ClientID identifies a person across instances. Match candidates using normalized first/last names, DOB, contact channels and possibly known aliases/previous names, with typo tolerance; never silently merge uncertain candidates. The immutable ClientID should be assigned or confirmed after review, rather than recalculated as a literal string of mutable names/contact data. Store aliases/evidence and a review decision/audit trail. A near match pauses identity assignment or marks it Pending for staff confirmation; never auto-merge.
+- ClientInstance detail should show "Cases in this instance" (EpisodeID matches) and "Earlier cases for this ClientID" (same ClientID, different EpisodeID). Historical graveyard records need a separate reconciliation/backfill to ClientID; do not assume the current prototype HistoricalCaseIndex supplies person links.
+- Phase 5 cases should preferably be collapsed under the parent by default. If the view cannot provide that interaction reliably, use the two detail sections above. Do not conflate a table Group by text header with an editable parent row.
+- Every ClientInstance row needs Add Case accessible from its row or Edit form; a parent Edit form's IsAPartOf Related Cases → New already works for Phase 2. Extend to Phase 2–5 and gate Phase 1. A row/detail action can use LINKTOFORM to preset EpisodeID. Custom actions do not render inside AppSheet forms, so the inline child New control is the supported Edit-form affordance.
+- Gmail intake: the existing Apps Script reportedly parses incoming Jotform emails into a new Sheet tab. It was not found in the connected GitHub repo or as a standalone Drive Apps Script file; a container-bound script's code has not been inspected. Proposed adapter: idempotently create one ClientInstance in Phase 2 with source message/form ID, new EpisodeID, standardized TICWeek, parsed contact fields, and identity-review status. Keep Cases empty. For near matches, create a Pending identity review task and withhold/confirm ClientID before linking history and permitting case submission. Sheet direct writes require explicit duplicate/field validation; AppSheet form ValidIf is insufficient. App data from direct Sheet writes appears on next sync.
+- Do not migrate production intake or send data until the script, target workbook and access model are inspected and a fictional end-to-end test passes.
+
+Implementation priority: (1) confirm exact field ownership and hidden identity index, (2) normalize/match/review flow, (3) refactor phase views to real ClientInstance parent rows, (4) Add Case gates and dual history sections, (5) adapt/test Gmail ingestion with synthetic messages, (6) once-ever case submission ledger.
+
 ## Revised target — user clarification, 2026-10-22
 
 This section supersedes conflicting design decisions and continuation tasks below. No live editor changes were made for this revision yet.
