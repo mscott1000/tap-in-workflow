@@ -31,10 +31,10 @@ User authorized the coordinated prototype migration. This is the fictional Tap I
 - [x] Added Cases!AI1 CurrentTask and regenerated schema. Set optional Enum choices Need to Text, Need to Call, Confirmation Pending; display name Current task. Still add form/detail/phase column order and format rules.
 - [x] Added ServiceEpisodes as AppSheet table named ClientInstances, EpisodeID key with UNIQUEID() initial value, ClientID Ref to Clients; disabled ClientInstances deletes. Still define weekly display label and unique-week validation.
 - [x] Converted Cases[EpisodeID] to Ref to ClientInstances with IsAPartOf; disabled Cases deletes. Still configure edit forms, phase-based creation restriction, and verify no cascade path remains.
-- [ ] Migrate client/instance Add Case UI from detail to Edit while avoiding duplicate entry paths.
-- [ ] Change phase slices and computed routing so each case follows its own lifecycle status, including jumps to Phase 5; group cases under ClientInstance. Retain Clients/instances with zero cases.
-- [ ] Add CaseNumber match alert and review display, with historical match evidence; preserve submission guard, update export selections/action to new case key.
-- [ ] Verify synthetic workflow: zero-case instance, add from Edit, move 1→5, sibling stays in other phase, each Current task retains phase, repeated case number flags, different week creates new instance without mixing old cases, export guard.
+- [x] ClientInstances system ServiceEpisodes_Form automatic column order includes Related Cases; Related Cases Show_If is IN(UPPER([Phase]), LIST("PHASE 1", "PHASE 2")), so inline section is restricted to early phases. Added menu view Client Instances over ClientInstances; hid obsolete Clients detail Add Case action. Still verify actual edit-form flow in preview.
+- [x] Phase2_Cases, Phase3_Cases, Phase4_Cases row filters now use their own CasePhase and latest ClientInstances[TICWeek] for matching ClientID rather than client-wide WorkflowStage/CurrentEpisodeID. Still build Phase 5 case slice/view, group by ClientInstance, and verify zero-case and non-linear movement.
+- [x] Added Cases virtual RepeatCaseAlert that checks normalized CaseNumber against other Cases and HistoricalCaseIndex and displays a review warning; Add to Export writes CaseID key and Remove Export Selection matches CaseID. Still verify visibility on edit form, add useful match context, and test export guard.
+- [ ] End-to-end synthetic workflow remains untested. App preview was runnable after saves through version 1.000222; later edits need another preview check.
 - [x] Updated checkpoint after initial saved edits. Continue to update after remaining work.
 
 ## Manual continuation in AppSheet
@@ -49,3 +49,11 @@ Operational graveyard import/index, immutable once-ever submission ledger and en
 
 ## Important migration discovery
 Regenerating Cases restored source header Court, while existing app actions/views referred to Jurisdiction, temporarily making the preview unrunnable. Renamed Cases!D1 from Court to Jurisdiction in the source, regenerated again, and verified the preview recovered. Keep source and AppSheet column names aligned on future regeneration. AppSheet shows a pre-existing Google Sheet data-validation list length warning for Cases (>255 chars); it did not stop the preview. The current app remains a prototype, not deployed.
+
+## Second checkpoint
+- Added ClientInstances virtual InstanceLabel = CONCATENATE([ClientID].[_ComputedName], " — week of ", TEXT([TICWeek])); switched label from EpisodeID.
+- ClientInstances[TICWeek] Valid If counts another instance with the same ClientID and TICWeek and blocks duplicates in the app form; direct Sheet writes still require separate checks.
+- Cases[EpisodeID] Valid If allows new rows only when parent Phase is 1 or 2, but permits editing already stored CaseIDs in later phases. EpisodeID marked required.
+- Cases[ClientID] Initial Value = [EpisodeID].[ClientID], so inline child from weekly parent inherits the person. This exposed a circular default with the legacy EpisodeID Initial Value = [ClientID].[CurrentEpisodeID]. Removed that old EpisodeID default, saved, and verified preview recovered. Do not restore the old default.
+- No real data written or submission sent. The source Cases!D1 header was aligned to Jurisdiction; Cases!AI1 is CurrentTask. Some existing Google validation-list warning remains.
+- Remaining immediate sequence: create Phase5_Cases and use it for Graveyard (or an additional completed-cases view); group phase case views by EpisodeID/InstanceLabel; include CurrentTask and RepeatCaseAlert in case form/detail column orders, apply formatting; disable Clients deletes; test inline add using fictional data and repeat-number warning, and ensure Export Draft CSV works. Verify new ClientInstance form navigation and CaseID link integrity. Consider whether historical/candidate matching should show detailed matches, not just alert.
