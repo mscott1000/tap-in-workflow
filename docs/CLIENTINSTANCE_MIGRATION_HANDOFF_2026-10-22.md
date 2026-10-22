@@ -8,10 +8,10 @@ User authorized the coordinated prototype migration. This is the fictional Tap I
 - Workbook: Tap In Center — AppSheet POC, https://docs.google.com/spreadsheets/d/1Yhol_3USiPmUNNhz6Mmyou2ArJ93WAlCdEKzNfi5TD8/edit
 - Fresh backup made 2026-10-22: https://docs.google.com/spreadsheets/d/1KVVJs7mCEiCik4_iYJ_hw4i-kBw4TowzCLVnES_oWOk/edit
 - Previous implementation record: docs/LIVE_IMPLEMENTATION_2026-10-21.md.
-- At creation of this checkpoint: no migration edits to workbook or AppSheet have been made yet.
+- Checkpoint was created before edits; current status is below. AppSheet preview was runnable after the key/relationship saves (version 1.000216), prior to the unsaved removal-action adjustment.
 - Workbook tabs: Clients (sheetId 184718347), ServiceEpisodes (201000002), Cases (201000003), Interactions (201000004), HistoricalCaseIndex (201000005), ExportSelections (201000006).
 - Current headers: ServiceEpisodes A:G = EpisodeID, ClientID, TICWeek, Phase, Status, AssignedTo, IntakeSourceID. Cases A:AH = CaseID, ClientID, EpisodeID, Court, CaseNumber, CaseKey, AttorneyStatus, ResearchStatus, Eligible, ResearchNotes, CasePhase, CaseStatus, ReasonMissingCourtCategory, ReasonMissingCourtText, NumberOfCounts, ChargeType, ChargeClass, ChargeText, ChargeCategory, BondAmount, AttorneyName, Division, WarrantIssueDate, PriorTICRecall, PAOnCall, PAConsent, WarrantRecalled, NextCourtDate, CaseLink, RequestSentDate, ClientNotifiedDate, NotificationMethod, NotificationNotes, ContactLog. ExportSelections A:E = SelectionID, StaffEmail, CaseID, SelectedAt, ExportBatchID.
-- Existing CaseID is a populated physical column, while CaseNumber is presently the AppSheet key. Consider using CaseID as the immutable unique row key after verifying every row and dependency, instead of adding another CaseRowID column.
+- Cases had 21 populated, unique CaseID values, including one recently added fictional row; ExportSelections had zero data rows. AppSheet Cases key has now changed to CaseID, with CaseNumber retained as label.
 - Existing ServiceEpisodes source tab may remain physically named that; app-facing label is ClientInstance. EpisodeID may remain internal key.
 - Existing Add Case is a Clients detail action, prefilled via LINKTOFORM; current primary Research is Clients based; Research Cases view is case based.
 
@@ -27,15 +27,15 @@ User authorized the coordinated prototype migration. This is the fictional Tap I
 - [x] Read previous implementation record and live workbook metadata/headers.
 - [x] Make fresh source workbook backup (link above).
 - [ ] Inspect the AppSheet editor state, tables, columns, actions, views, slices, formulas and all CaseNumber references.
-- [ ] Verify Cases[CaseID] uniqueness/nonblank and referenced values; inventory existing selections and reverse references. Migrate Cases key from CaseNumber to CaseID only as a coordinated edit. Verify links and export after save.
-- [ ] Add CurrentTask source column at Cases AI and regenerate Cases schema; set optional Enum, three allowed values, display in case edit/detail and phases, format rules.
-- [ ] Add ServiceEpisodes as AppSheet table, app label ClientInstances; set EpisodeID key and ClientID Ref. Define weekly display label (client name + TICWeek) and unique-week form validation.
-- [ ] Convert Cases[EpisodeID] to Ref to ClientInstances with IsAPartOf. Put related cases in ClientInstance Edit form(s) for Phase 1/2; exclude child Add in later phase forms. Ensure creation restriction does not block edits after movement. Protect deletion.
+- [x] Verified all 21 CaseIDs nonblank/unique and ExportSelections empty. Changed Cases key to CaseID, kept CaseNumber label, changed Add to Export to write [CaseID] into ExportSelections[CaseID]. Changed Remove Export Selection referenced-row comparison to [_THISROW].[CaseID] (pending final save/functional export test).
+- [x] Added Cases!AI1 CurrentTask and regenerated schema. Set optional Enum choices Need to Text, Need to Call, Confirmation Pending; display name Current task. Still add form/detail/phase column order and format rules.
+- [x] Added ServiceEpisodes as AppSheet table named ClientInstances, EpisodeID key with UNIQUEID() initial value, ClientID Ref to Clients; disabled ClientInstances deletes. Still define weekly display label and unique-week validation.
+- [x] Converted Cases[EpisodeID] to Ref to ClientInstances with IsAPartOf; disabled Cases deletes. Still configure edit forms, phase-based creation restriction, and verify no cascade path remains.
 - [ ] Migrate client/instance Add Case UI from detail to Edit while avoiding duplicate entry paths.
 - [ ] Change phase slices and computed routing so each case follows its own lifecycle status, including jumps to Phase 5; group cases under ClientInstance. Retain Clients/instances with zero cases.
 - [ ] Add CaseNumber match alert and review display, with historical match evidence; preserve submission guard, update export selections/action to new case key.
 - [ ] Verify synthetic workflow: zero-case instance, add from Edit, move 1→5, sibling stays in other phase, each Current task retains phase, repeated case number flags, different week creates new instance without mixing old cases, export guard.
-- [ ] Update this record with actual applied changes and blockers.
+- [x] Updated checkpoint after initial saved edits. Continue to update after remaining work.
 
 ## Manual continuation in AppSheet
 - Data → Tables: add ServiceEpisodes; Data → Columns: set EpisodeID key, ClientID Ref, Cases EpisodeID Ref/IsAPartOf; regenerate after source header addition.
@@ -46,3 +46,6 @@ User authorized the coordinated prototype migration. This is the fictional Tap I
 
 ## Open production dependencies
 Operational graveyard import/index, immutable once-ever submission ledger and enforcement for every write path, Jotform/mailbox adapter, staff access and rollout, final court report/receipts. No real court submission or client communication authorized by this prototype task.
+
+## Important migration discovery
+Regenerating Cases restored source header Court, while existing app actions/views referred to Jurisdiction, temporarily making the preview unrunnable. Renamed Cases!D1 from Court to Jurisdiction in the source, regenerated again, and verified the preview recovered. Keep source and AppSheet column names aligned on future regeneration. AppSheet shows a pre-existing Google Sheet data-validation list length warning for Cases (>255 chars); it did not stop the preview. The current app remains a prototype, not deployed.
