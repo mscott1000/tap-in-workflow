@@ -1,5 +1,19 @@
 # ClientInstance migration handoff — 2026-10-22
 
+## Revised target — user clarification, 2026-10-22
+
+This section supersedes conflicting design decisions and continuation tasks below. No live editor changes were made for this revision yet.
+
+- ClientInstance is the editable parent for one client in one TIC week. It supplies shared name, DOB, contact information and instance-specific staff notes to every linked case. Case rows are the principal work items from Phase 2 through Phase 5. Prefer dereferenced parent values rather than duplicate editable copies on six cases.
+- Phase 1 has only ClientInstance rows and no case rows. Phase 1 is intake/contact sorting. The existing Cases[EpisodeID] ValidIf still allows Phase 1 and must be changed; the Phase1_Clients view must be replaced with a ClientInstances-based view. Establish how an instance moves from Phase 1 to Phase 2 before its first case.
+- A case created from a Phase 2 ClientInstance must retain Cases[EpisodeID] → ClientInstances[EpisodeID]; this Ref/IsAPartOf and an inline New control in the parent Edit form already exist, but a saved-row test is pending. The parent Edit form's Related Cases Show_If currently allows Phase 1/2; revise to Phase 2–5 if creation is intended at every later phase.
+- In Phase 2–5, show an actual selectable/editable ClientInstance parent row above its phase-filtered case rows, not merely a Group by header. The existing main Research view is Phase2_Clients and Graveyard is a Cases table grouped by week/name; neither fulfills the full nested-parent requirement. Request and Follow Up are case tables, also without a true parent row. Investigate a ClientInstances deck with phase-specific nested Ref lists or a dashboard, and verify interactions on mobile/desktop before replacing views.
+- If one ClientInstance has cases in multiple phases, display the same parent in each relevant phase while cases remain only in their own phase. The parent's Phase field must not be the sole filter after research starts.
+- The user asked for Add Case inside the Edit form of any case in Phases 2–5. AppSheet does not display custom actions inside forms. Recommend the supported parent Edit → Related Cases → New control, plus an Add sibling case action on the case **detail/row** (outside Edit) prefilled with the same EpisodeID. Explain and validate the interaction with the user before treating it as equivalent to a button inside child Edit.
+- ClientInstances currently has only EpisodeID, ClientID, TICWeek, Phase, Status, AssignedTo, IntakeSourceID as physical fields. Name/DOB/contact may come from Clients via ClientID, but instance-specific contact and notes need an explicit source-of-truth design and new columns. Verify current Cases client display formulas before promising live propagation. Do not copy editable values into each case.
+
+Revised implementation order: (1) add/shared parent fields and verify dereferences; (2) Phase 1 ClientInstances-only view and Phase 2 gate for case creation; (3) phase-specific parent-plus-case nested views for 2–5; (4) add sibling action on case Detail and parent Edit inline New; (5) synthetic tests including six cases/one parent across phases and edits propagating; (6) export/once-ever submission controls and production dependencies already listed below.
+
 ## Authorization and scope
 User authorized the coordinated prototype migration. This is the fictional Tap In Center AppSheet POC, not production deployment. Keep the existing Jotform, operational graveyard, court transmission and access cutover outside this change. User wants economical tool use and a task list if interrupted.
 
