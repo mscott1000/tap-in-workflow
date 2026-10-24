@@ -1,5 +1,5 @@
 // First-pass Gmail-to-Research adapter; requires the existing parseIntakeMessage_ parser.
-// Set POC_SPREADSHEET_ID and TIC_WEEK_START_DAY (0=Sun..6=Sat) in Script Properties.
+// Set POC_SPREADSHEET_ID in Script Properties. TIC week begins Tuesday.
 // Staff must confirm returning identities; this importer never merges on name alone.
 function ingestResearchClient_(message, fields) {
   var lock = LockService.getScriptLock();
@@ -7,8 +7,8 @@ function ingestResearchClient_(message, fields) {
   try {
     var p = PropertiesService.getScriptProperties();
     var id = p.getProperty('POC_SPREADSHEET_ID');
-    var start = p.getProperty('TIC_WEEK_START_DAY');
-    if (!id || !/^[0-6]$/.test(start)) throw Error('Configure spreadsheet and TIC week');
+    var start = '2'; // Tuesday, confirmed 2026-10-24
+    if (!id) throw Error('Configure POC_SPREADSHEET_ID');
     var book = SpreadsheetApp.openById(id);
     var clients = book.getSheetByName('Clients');
     var identities = book.getSheetByName('ClientIdentities');
