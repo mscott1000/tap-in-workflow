@@ -20,12 +20,15 @@ function ingestResearchClient_(message, fields) {
     var name = String(fields.name || '').trim().split(/\s+/);
     if (name.length < 2 || !(fields.phone || fields.email)) throw Error('Incomplete intake');
     var tz = 'America/Chicago', date = message.getDate();
-    var local = Utilities.formatDate(date,tz,'yyyy/MM/dd');
-    var weekDate = new Date(local+' 12:00:00');
-    weekDate.setDate(weekDate.getDate()-(weekDate.getDay()-Number(start)+7)%7);
-    var week = Utilities.formatDate(weekDate,tz,'M/d/yyyy');
+    var week = ticTuesdayWeek_(date);
     var knownId = p.getProperty('CONFIRMED_CLIENTID_FOR_MESSAGE_'+messageId);
     var clientsData = readObjects_(clients);
+    // Recover safely if the Client row was written but the ledger append failed.
+    var replayRow = clientsData.find(function(r){return String(r.SourceGmailMessageID) === messageId;});
+    if (replayRow) {
+      ledger.appendRow([messageId,replayRow.ClientRowID,new Date()]);
+      return 'recovered';
+    }
     if (knownId && !clientsData.some(function(r){return String(r.ClientID) === knownId;}))
       throw Error('Unknown confirmed CLIENTID');
     var clientId = knownId || Utilities.getUuid();
@@ -43,6 +46,7 @@ function ingestResearchClient_(message, fields) {
     });
     appendObject_(clients,{
       ClientID:clientId,ClientRowID:clientRowId,TICWeek:week,
+      SourceGmailMessageID:messageId,
       FirstName:name[0],MiddleName:name.slice(1,-1).join(' '),LastName:name[name.length-1],
       DOB:fields.dob,Phone:fields.phone,Email:fields.email,Address:fields.address,
       Race:fields.race,Gender:fields.gender,ReferralSource:fields.heardHow,
@@ -63,4 +67,12 @@ function readObjects_(sheet) {
 function appendObject_(sheet,values) {
   var headers = sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0];
   sheet.appendRow(headers.map(function(h){return values[h] == null ? '' : values[h];}));
+}
+
+// UTC calendar arithmetic avoids machine-timezone/DST drift for Chicago TIC weeks.
+function ticTuesdayWeek_(date) {
+  var parts = Utilities.formatDate(date,'America/Chicago','yyyy-MM-dd').split('-').map(Number);
+  var day = new Date(Date.UTC(parts[0],parts[1]-1,parts[2]));
+  day.setUTCDate(day.getUTCDate() - (day.getUTCDay()-2+7)%7);
+  return (day.getUTCMonth()+1)+'/'+day.getUTCDate()+'/'+day.getUTCFullYear();
 }
