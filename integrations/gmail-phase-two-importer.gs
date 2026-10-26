@@ -3,6 +3,7 @@
 const CONFIG = {
   SHEET_ID: '1Yhol_3USiPmUNNhz6Mmyou2ArJ93WAlCdEKzNfi5TD8',
   SHEET_NAME: 'Clients',
+  IDENTITY_SHEET_NAME: 'ClientIdentities',
   GMAIL_QUERY: 'is:unread subject:"Intake Form -" newer_than:3d',
   TIMEZONE: 'America/Chicago',
   MAX_THREADS_PER_RUN: 50,
@@ -13,40 +14,92 @@ function runIngest() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(CONFIG.LOCK_WAIT_MS)) return;
   try {
-    const sheet = SpreadsheetApp.openById(CONFIG.SHEET_ID).getSheetByName(CONFIG.SHEET_NAME);
-    if (!sheet) throw new Error('Clients tab not found');
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const required = ['ClientRowID', 'FirstName', 'LastName', 'DOB', 'Phone', 'Email', 'ClientPhase', 'ClientStatus', 'TICWeek'];
-    required.forEach(name => {
-      if (!headers.includes(name)) throw new Error('Missing Clients column: ' + name);
-    });
-    const keyIndex = headers.indexOf('ClientRowID');
-    const rows = sheet.getLastRow() > 1
-      ? sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues() : [];
-    const imported = new Set(rows.map(row => String(row[keyIndex])));
+    const workbook = SpreadsheetApp.openById(CONFIG.SHEET_ID);
+    const clients = workbook.getSheetByName(CONFIG.SHEET_NAME);
+    const identities = workbook.getSheetByName(CONFIG.IDENTITY_SHEET_NAME);
+    if (!clients || !identities) throw new Error('Clients or ClientIdentities tab not found');
+    const clientHeaders = clients.getRange(1, 1, 1, clients.getLastColumn()).getValues()[0];
+    const identityHeaders = identities.getRange(1, 1, 1, identities.getLastColumn()).getValues()[0];
+    requireColumns_(clientHeaders, ['ClientID', 'ClientRowID', 'FirstName', 'LastName', 'DOB', 'Phone', 'Email', 'ClientPhase', 'ClientStatus', 'TICWeek'], 'Clients');
+    requireColumns_(identityHeaders, ['ClientID', 'CurrentClientRowID', 'FirstName', 'LastName', 'ClientStatus'], 'ClientIdentities');
+
+    const clientRows = clients.getLastRow() > 1
+      ? clients.getRange(2, 1, clients.getLastRow() - 1, clientHeaders.length).getValues() : [];
+    const clientByKey = new Map(clientRows.map(row => [String(row[clientHeaders.indexOf('ClientRowID')]), row]));
+    const identityRows = identities.getLastRow() > 1
+      ? identities.getRange(2, 1, identities.getLastRow() - 1, identityHeaders.length).getValues() : [];
+    const identityIds = new Set(identityRows.map(row => String(row[identityHeaders.indexOf('ClientID')])));
+
     const threads = GmailApp.search(CONFIG.GMAIL_QUERY, 0, CONFIG.MAX_THREADS_PER_RUN);
     let created = 0;
     let skipped = 0;
     for (const thread of threads) {
       for (const msg of thread.getMessages()) {
         if (!msg.isUnread() || !/^Intake Form\s*-/i.test(msg.getSubject() || '')) continue;
-        // The email ID is the persisted row key, so retries cannot append a second row.
+        // The message ID is the client-row key. Re-running after a failure is safe.
         const key = 'gmail_' + msg.getId();
-        if (imported.has(key)) { msg.markRead(); continue; }
+        const keyIdentityId = 'intake_' + key;
+        const existingRow = clientByKey.get(key);
+        if (existingRow) {
+          // Repair an interrupted earlier run before acknowledging the email.
+          const existing = Object.fromEntries(clientHeaders.map((name, i) => [name, existingRow[i]]));
+          const existingIdentityId = String(existing.ClientID || keyIdentityId);
+          if (!identityIds.has(existingIdentityId)) {
+            appendMappedRow_(identities, identityHeaders, buildIntakeIdentity_(existing, existingIdentityId));
+            SpreadsheetApp.flush();
+            identityIds.add(existingIdentityId);
+          }
+          msg.markRead();
+          continue;
+        }
         const fields = parseIntakeMessage_(msg);
         const fullName = fields.name || String(msg.getSubject()).replace(/^Intake Form\s*-\s*/i, '').trim();
         if (!fullName || (!fields.phone && !fields.email)) { skipped++; continue; }
         const record = buildPhaseTwoClient_(fields, fullName, key, msg.getDate(), new Date());
-        const row = headers.map(name => Object.prototype.hasOwnProperty.call(record, name) ? literalSheetValue_(record[name]) : '');
-        sheet.appendRow(row);
+        record.ClientID = keyIdentityId;
+
+        // Write identity first. If the client append fails, a retry reuses the same identity.
+        if (!identityIds.has(keyIdentityId)) {
+          appendMappedRow_(identities, identityHeaders, buildIntakeIdentity_(record, keyIdentityId));
+          SpreadsheetApp.flush();
+          identityIds.add(keyIdentityId);
+        }
+        appendMappedRow_(clients, clientHeaders, record);
         SpreadsheetApp.flush();
-        imported.add(key);
+        clientByKey.set(key, clientHeaders.map(name => record[name] || ''));
         msg.markRead();
         created++;
       }
     }
     console.log('Phase 2 intake: created=' + created + ', skipped=' + skipped);
   } finally { lock.releaseLock(); }
+}
+
+function requireColumns_(headers, required, tabName) {
+  required.forEach(name => {
+    if (!headers.includes(name)) throw new Error('Missing ' + tabName + ' column: ' + name);
+  });
+}
+
+function appendMappedRow_(sheet, headers, record) {
+  sheet.appendRow(headers.map(name =>
+    Object.prototype.hasOwnProperty.call(record, name) ? literalSheetValue_(record[name]) : ''
+  ));
+}
+
+function buildIntakeIdentity_(record, identityId) {
+  return {
+    ClientID: identityId,
+    FirstName: record.FirstName, LastName: record.LastName, MiddleName: record.MiddleName,
+    DOB: record.DOB, Phone: record.Phone, Email: record.Email, Address: record.Address,
+    ClientStatus: 'Check Cases', CurrentClientRowID: record.ClientRowID,
+    TICWeek: record.TICWeek, FirstContactDate: record.FirstContactDate,
+    DateFormSubmitted: record.DateFormSubmitted, Race: record.Race, Gender: record.Gender,
+    ReferralSource: record.ReferralSource, PrimaryContactMethod: record.PrimaryContactMethod,
+    OnlineForm: 'Yes', Notes: record.Notes,
+    Log: record.Log || 'Intake form received.',
+    ReferToTBP: 'No', ReferToHolland: record.ReferToHolland || 'No'
+  };
 }
 
 function buildPhaseTwoClient_(fields, fullName, key, receivedAt, now) {
@@ -504,3 +557,4 @@ function toTitleCaseAddressPart_(text) {
     .replace(/\bSt\b(?!\.)/g, 'St')
     .replace(/\bMt\b(?!\.)/g, 'Mt');
 }
+
