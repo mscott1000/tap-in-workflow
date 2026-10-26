@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const source = fs.readFileSync(__dirname + '/gmail-phase-two-importer.gs', 'utf8');
-const clientHeaders = ['ClientID','ClientRowID','FirstName','LastName','MiddleName','DOB','Phone','Email','Address','ClientPhase','ClientStatus','TICWeek','FirstContactDate','DateFormSubmitted','Race','Gender','ReferralSource','PrimaryContactMethod','OnlineForm','Notes'];
+const clientHeaders = ['ClientID','ClientRowID','FirstName','LastName','MiddleName','DOB','Phone','Email','Address','ClientPhase','ClientStatus','TICWeek','FirstContactDate','DateFormSubmitted','Race','Gender','Location','ReasonMissingCourtCategory','ReferralSource','PrimaryContactMethod','OnlineForm','Notes'];
 const identityHeaders = ['ClientID','FirstName','LastName','MiddleName','DOB','Phone','Email','Address','ClientStatus','CurrentClientRowID','TICWeek','FirstContactDate','DateFormSubmitted','Race','Gender','ReferralSource','ReferToTBP','ReferToHolland','PrimaryContactMethod','OnlineForm','Notes','Log'];
 const clientRows = [clientHeaders], identityRows = [identityHeaders];
 let unread = true, failAfterClientWrite = true, failClientAppend = false, flushCount = 0, messageId = 'fixture-001';
@@ -48,7 +48,7 @@ assert.equal(identity.ClientStatus,'Check Cases'); assert.equal(identity.FirstNa
 assert.equal(identity.ReferToTBP,'No'); assert.equal(identity.ReferToHolland,'No');
 assert.equal(client.FirstName,'Fictional'); assert.equal(client.MiddleName,'Middle'); assert.equal(client.LastName,'Test');
 assert.equal(client.Phone,'(314) 555-0100'); assert.equal(client.DOB,'7-17-1996');
-assert.equal(client.DateFormSubmitted,'2026-10-24'); assert.ok(client.Notes.includes('=formula-like input'));
+assert.equal(client.DateFormSubmitted,'2026-10-24'); assert.equal(client.Notes,' | =formula-like input');
 messageId='fixture-002'; unread=true; failClientAppend=true;
 assert.throws(()=>ctx.runIngest(), /simulated client append failure/);
 assert.equal(identityRows.length,3); assert.equal(clientRows.length,2);
@@ -82,6 +82,55 @@ assert.equal(ctx.literalSheetValue_('=1+1'),"'=1+1");
 assert.equal(ctx.normalizeDobNoLeadingZeros_('7/17/96'),'7/17/96');
 const plain=ctx.parseIntakeBody_('Your Name: Plain Example\nPhone Number: 3145550101\nDo you have any other questions for the tap in center?: Please call');
 assert.equal(plain.otherQuestions,'Please call');
-console.log('PASS: linked rows, Phase 2 mapping, partial-write retries, both importer orders, unchanged read state, pagination, per-message deduplication, dates and parser');
+// Every requested intake answer must reach its own destination, in either email format.
+const answers = [
+  ['Your Name','Example Two Middle Person Jr.'],
+  ['Current Address','100 Example St, St Louis, MO 63101'],
+  ['Phone Number','3145550100'], ['Email Address','test@example.invalid'],
+  ['Date of Birth','06/28/1994'], ['What gender do you identify as?','Example gender'],
+  ['What is your race?','Example race'],
+  ['What county or city was the warrant issued in?','Example location'],
+  ['Please explain the circumstance for the missed court date','Transportation Issues'],
+  ['How did you hear about the Tap In Center','Example referral'],
+  ['Do you have any other questions for the Tap In Center?','Please call after noon.']
+];
+const html = '<table>' + answers.map(([q,v]) => `<tr><td class="questionColumn">${q}</td><td class="valueColumn">${v}</td></tr>`).join('') + '</table>';
+const expected = {FirstName:'Example', MiddleName:'Two Middle', LastName:'Person',
+  Address:'100 Example St, St. Louis, MO 63101', Phone:'(314) 555-0100',
+  Email:'test@example.invalid', DOB:'6-28-1994', Gender:'Example gender', Race:'Example race',
+  Location:'Example location', ReasonMissingCourtCategory:'Transportation Issues',
+  ReferralSource:'Example referral', Notes:'Example location | Please call after noon.'};
+const parsers = [ctx.parseIntakeHtmlBody_(html)];
+for (const separator of [': ', '\t', '\n', ' ']) {
+  parsers.push(ctx.parseIntakeBody_(answers.map(([q,v])=>q + separator + v).join('\n')));
+}
+for (const fields of parsers) {
+  const row = ctx.buildPhaseTwoClient_(fields,fields.name,'synthetic-map',new Date('2026-10-24T19:00:00Z'),new Date('2026-10-26T19:00:00Z'));
+  for (const [key,value] of Object.entries(expected)) assert.equal(row[key],value,key);
+  assert.equal(row.ClientPhase,'Research'); assert.equal(row.ClientStatus,'Check Cases');
+  assert.equal(ctx.buildIntakeIdentity_(row,'synthetic-identity').Notes,expected.Notes);
+}
+for (const suffix of ['Jr','Jr.','Sr','Sr.','jr.','SR']) {
+  const name = ctx.splitName_('Example Middle Person ' + suffix);
+  assert.equal(name.first,'Example'); assert.equal(name.middle,'Middle'); assert.equal(name.last,'Person');
+  const shortName = ctx.splitName_('Example Person ' + suffix);
+  assert.equal(shortName.middle,''); assert.equal(shortName.last,'Person');
+}
+for (const [input,first,middle,last] of [
+  ['Example','Example','',''], ['', '', '', ''], ['Example Person','Example','','Person'],
+  [' Example   Two Middle   Person ','Example','Two Middle','Person'],
+  ['Example Middle Person III','Example','Middle Person','III']
+]) {
+  const name=ctx.splitName_(input); assert.equal(name.first,first); assert.equal(name.middle,middle); assert.equal(name.last,last);
+}
+for (const [location,question,notes] of [['Court','','Court | '],['','Question',' | Question'],['','',' | ']]) {
+  assert.equal(ctx.buildPhaseTwoClient_({warrantCityCounty:location,otherQuestions:question},'Example Person','synthetic',new Date(),new Date()).Notes,notes);
+}
+// A missing destination must fail before reading Gmail or appending any row.
+const locationIndex=clientHeaders.indexOf('Location');
+clientHeaders.splice(locationIndex,1);
+assert.throws(()=>ctx.runIngest(), /Missing Clients column: Location/);
+clientHeaders.splice(locationIndex,0,'Location');
+console.log('PASS: all requested mappings in HTML and four plain-text layouts, Jr/Sr names, exact notes, required headers, linked rows, retries, both importer orders, unchanged read state, pagination, deduplication and dates');
 
 
