@@ -8,9 +8,29 @@
 
 **First-run caution:** The default search is `subject:"Intake Form -" newer_than:3d`. Unlike the old importer it includes already-read notifications, so a first run can import matching emails from the previous three days. Before the first manual run, restrict `GMAIL_QUERY` to one agreed fictional test notification while retaining the `Intake Form -` subject format. Do not enable its schedule until that test succeeds. Messages outside the three-day search window need a separately approved backfill.
 
-**Installation status:** The revised code and synthetic tests are saved in this repository, not installed or live-tested. The mailbox Apps Script project could not be opened in the connected browser on October 26 because Google presented a verification block. When mailbox access is available, leave the original project untouched, create the separate AppSheet intake project, grant the mailbox account Editor access to the AppSheet workbook, install this file, authorize its Gmail and spreadsheet access, and manually run `runIngest` for the isolated fictional notification. Verify that both destinations receive the example and a second AppSheet run does not duplicate it. Then confirm/create `runIngest`'s time trigger in the **new** project (or call `setupTriggerOnce()` there). The direct sheet writes intentionally create both linked rows; they do not rely on the AppSheet `Intake Receiver - Phase 2` bot, which runs on AppSheet additions rather than script writes.
+**Installation status:** The user reported that the separately installed importer successfully imported eight Client rows. The latest mapping revision below is saved and synthetically tested in this repository but has NOT been installed or live-tested by the agent: Google again blocked the browser with a verification screen on October 26. To apply it, replace only the code in the existing AppSheet intake Apps Script project with `gmail-phase-two-importer.gs`, save, and retain that project's existing trigger. Do not replace or alter the original Google Sheets importer. Existing message-ID deduplication remains intact; already-imported Client rows are not rewritten. The direct sheet writes intentionally create both linked rows; they do not rely on the AppSheet `Intake Receiver - Phase 2` bot, which runs on AppSheet additions rather than script writes.
 
-**Synthetic verification:** `node integrations/gmail-phase-two-importer.test.cjs` checks both importer orders, unchanged read state, linked-row mapping, duplicate prevention, interrupted writes, pagination beyond 50 threads, and new messages in an already-seen conversation. These are mocked tests, not evidence of Gmail authorization or live installation.
+### Intake field mapping (2026-10-26)
+
+| Intake email field | Clients column |
+| --- | --- |
+| Your Name | FirstName, MiddleName, LastName |
+| Current Address | Address |
+| Phone Number | Phone |
+| Email Address | Email |
+| Date of Birth | DOB |
+| What gender do you identify as? | Gender |
+| What is your race? | Race |
+| What county or city was the warrant issued in? | Location |
+| Please explain the circumstance for the missed court date | ReasonMissingCourtCategory |
+| How did you hear about the Tap In Center | ReferralSource |
+| Do you have any other questions for the Tap In Center? | Notes, combined with Location as below |
+
+The first name token becomes FirstName and the last token becomes LastName. A final Jr, Jr., Sr, or Sr. (case-insensitive) is excluded when a separate last name remains; the preceding token becomes LastName. Tokens between the first and last name become MiddleName. Suffixes are not stored in MiddleName or LastName. Other suffixes are not specially interpreted.
+
+Notes is exactly `Location + " | " + other-questions answer`, with no labels and no other intake answers added. The separator remains even when either answer is blank. Location and ReasonMissingCourtCategory are also written to their own Clients columns. All requested destination headers are checked before importing so missing columns cannot silently discard mapped answers. No Case rows are created or changed. Existing phone/address/date normalization and Phase 2 defaults remain unchanged.
+
+**Synthetic verification:** `node integrations/gmail-phase-two-importer.test.cjs` checks every requested mapping in HTML and four plain-text layouts, Jr/Sr handling, the exact Notes format (including blank answers), missing destination headers, both importer orders, unchanged read state, linked-row mapping, duplicate prevention, interrupted writes, pagination beyond 50 threads, and new messages in an already-seen conversation. These are mocked tests, not evidence of Gmail authorization or live installation.
 
 ## Source findings, 2026-10-22
 
