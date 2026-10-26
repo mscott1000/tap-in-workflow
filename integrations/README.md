@@ -1,5 +1,11 @@
 # Identity and case review integration (prototype)
 
+## Phase 2 Gmail intake importer (prepared 2026-10-26)
+
+`gmail-phase-two-importer.gs` replaces the existing `google-intake-form-auto-add` handler in the mailbox account's Apps Script project. It keeps the `runIngest` handler name and uses the existing Jotform email parser. For each accepted email, it writes a new `ClientIdentities` row and a linked `Clients` row in the AppSheet POC workbook, with `ClientPhase = Research` and `ClientStatus = Check Cases`. The same email ID supplies stable keys for retry safety. It does not create cases or automatically merge a returning person with an earlier identity. Staff identity review remains separate.
+
+**Installation status:** The code and synthetic tests are saved in this repository. The mailbox Apps Script project could not be opened in the connected browser on October 26 because Google presented a verification block. Thus the live script, its trigger, and a real email-to-Research run have not been verified. When mailbox access is available, replace only the old intake handler with this file, confirm the `runIngest` time trigger (or call `setupTriggerOnce()`), authorize its Gmail and spreadsheet access, and test with one fictional Jotform email. The direct sheet writes intentionally create both linked rows; they do not rely on the AppSheet `Intake Receiver - Phase 2` bot, which runs on AppSheet additions rather than script writes.
+
 ## Source findings, 2026-10-22
 
 The supplied `Intake 2026` workbook contains a **TIC Graveyard** tab, not a separate workbook. Its visible headings include TIC Week, First Name, Last Name, DOB, Eligible Cases, Ineligible Cases, Phone Number, and Email Address. The supplied scripts do three different jobs:
