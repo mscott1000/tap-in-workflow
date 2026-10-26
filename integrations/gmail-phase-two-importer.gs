@@ -1,12 +1,15 @@
-// Replaces google-intake-form-auto-add in the existing mailbox Apps Script project.
-// Existing runIngest triggers continue to use the same handler.
+// Install in a SEPARATE Apps Script project owned by the intake mailbox account.
+// Runs alongside google-intake-form-auto-add without changing its code or trigger.
 const CONFIG = {
   SHEET_ID: '1Yhol_3USiPmUNNhz6Mmyou2ArJ93WAlCdEKzNfi5TD8',
   SHEET_NAME: 'Clients',
   IDENTITY_SHEET_NAME: 'ClientIdentities',
-  GMAIL_QUERY: 'is:unread subject:"Intake Form -" newer_than:3d',
+  // Include read messages: the original importer may have already marked them read.
+  // ClientRowID records the message ID; no Gmail labels/read-state changes are needed.
+  GMAIL_QUERY: 'subject:"Intake Form -" newer_than:3d',
   TIMEZONE: 'America/Chicago',
-  MAX_THREADS_PER_RUN: 50,
+  MAX_THREADS_PER_PAGE: 50,
+  MAX_NEW_CLIENTS_PER_RUN: 50,
   LOCK_WAIT_MS: 10000
 };
 
@@ -30,46 +33,51 @@ function runIngest() {
       ? identities.getRange(2, 1, identities.getLastRow() - 1, identityHeaders.length).getValues() : [];
     const identityIds = new Set(identityRows.map(row => String(row[identityHeaders.indexOf('ClientID')])));
 
-    const threads = GmailApp.search(CONFIG.GMAIL_QUERY, 0, CONFIG.MAX_THREADS_PER_RUN);
     let created = 0;
     let skipped = 0;
-    for (const thread of threads) {
-      for (const msg of thread.getMessages()) {
-        if (!msg.isUnread() || !/^Intake Form\s*-/i.test(msg.getSubject() || '')) continue;
-        // The message ID is the client-row key. Re-running after a failure is safe.
-        const key = 'gmail_' + msg.getId();
-        const keyIdentityId = 'intake_' + key;
-        const existingRow = clientByKey.get(key);
-        if (existingRow) {
-          // Repair an interrupted earlier run before acknowledging the email.
-          const existing = Object.fromEntries(clientHeaders.map((name, i) => [name, existingRow[i]]));
-          const existingIdentityId = String(existing.ClientID || keyIdentityId);
-          if (!identityIds.has(existingIdentityId)) {
-            appendMappedRow_(identities, identityHeaders, buildIntakeIdentity_(existing, existingIdentityId));
-            SpreadsheetApp.flush();
-            identityIds.add(existingIdentityId);
+    // Page past already-imported messages so the newest page cannot starve older ones.
+    for (let start = 0; created < CONFIG.MAX_NEW_CLIENTS_PER_RUN; start += CONFIG.MAX_THREADS_PER_PAGE) {
+      const threads = GmailApp.search(CONFIG.GMAIL_QUERY, start, CONFIG.MAX_THREADS_PER_PAGE);
+      if (!threads.length) break;
+      for (const thread of threads) {
+        for (const msg of thread.getMessages()) {
+          if (!/^Intake Form\s*-/i.test(msg.getSubject() || '')) continue;
+          // The message ID is the client-row key. Re-running after a failure is safe.
+          const key = 'gmail_' + msg.getId();
+          const keyIdentityId = 'intake_' + key;
+          const existingRow = clientByKey.get(key);
+          if (existingRow) {
+            // Repair an interrupted earlier run without changing the email.
+            const existing = Object.fromEntries(clientHeaders.map((name, i) => [name, existingRow[i]]));
+            const existingIdentityId = String(existing.ClientID || keyIdentityId);
+            if (!identityIds.has(existingIdentityId)) {
+              appendMappedRow_(identities, identityHeaders, buildIntakeIdentity_(existing, existingIdentityId));
+              SpreadsheetApp.flush();
+              identityIds.add(existingIdentityId);
+            }
+            continue;
           }
-          msg.markRead();
-          continue;
-        }
-        const fields = parseIntakeMessage_(msg);
-        const fullName = fields.name || String(msg.getSubject()).replace(/^Intake Form\s*-\s*/i, '').trim();
-        if (!fullName || (!fields.phone && !fields.email)) { skipped++; continue; }
-        const record = buildPhaseTwoClient_(fields, fullName, key, msg.getDate(), new Date());
-        record.ClientID = keyIdentityId;
+          const fields = parseIntakeMessage_(msg);
+          const fullName = fields.name || String(msg.getSubject()).replace(/^Intake Form\s*-\s*/i, '').trim();
+          if (!fullName || (!fields.phone && !fields.email)) { skipped++; continue; }
+          const record = buildPhaseTwoClient_(fields, fullName, key, msg.getDate(), new Date());
+          record.ClientID = keyIdentityId;
 
-        // Write identity first. If the client append fails, a retry reuses the same identity.
-        if (!identityIds.has(keyIdentityId)) {
-          appendMappedRow_(identities, identityHeaders, buildIntakeIdentity_(record, keyIdentityId));
+          // Write identity first. If the client append fails, a retry reuses the same identity.
+          if (!identityIds.has(keyIdentityId)) {
+            appendMappedRow_(identities, identityHeaders, buildIntakeIdentity_(record, keyIdentityId));
+            SpreadsheetApp.flush();
+            identityIds.add(keyIdentityId);
+          }
+          appendMappedRow_(clients, clientHeaders, record);
           SpreadsheetApp.flush();
-          identityIds.add(keyIdentityId);
+          clientByKey.set(key, clientHeaders.map(name => record[name] || ''));
+          created++;
+          if (created >= CONFIG.MAX_NEW_CLIENTS_PER_RUN) break;
         }
-        appendMappedRow_(clients, clientHeaders, record);
-        SpreadsheetApp.flush();
-        clientByKey.set(key, clientHeaders.map(name => record[name] || ''));
-        msg.markRead();
-        created++;
+        if (created >= CONFIG.MAX_NEW_CLIENTS_PER_RUN) break;
       }
+      if (threads.length < CONFIG.MAX_THREADS_PER_PAGE) break;
     }
     console.log('Phase 2 intake: created=' + created + ', skipped=' + skipped);
   } finally { lock.releaseLock(); }
@@ -557,4 +565,5 @@ function toTitleCaseAddressPart_(text) {
     .replace(/\bSt\b(?!\.)/g, 'St')
     .replace(/\bMt\b(?!\.)/g, 'Mt');
 }
+
 
