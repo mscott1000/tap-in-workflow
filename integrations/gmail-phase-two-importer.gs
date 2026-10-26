@@ -23,7 +23,7 @@ function runIngest() {
     if (!clients || !identities) throw new Error('Clients or ClientIdentities tab not found');
     const clientHeaders = clients.getRange(1, 1, 1, clients.getLastColumn()).getValues()[0];
     const identityHeaders = identities.getRange(1, 1, 1, identities.getLastColumn()).getValues()[0];
-    requireColumns_(clientHeaders, ['ClientID', 'ClientRowID', 'FirstName', 'LastName', 'DOB', 'Phone', 'Email', 'ClientPhase', 'ClientStatus', 'TICWeek'], 'Clients');
+    requireColumns_(clientHeaders, ['ClientID', 'ClientRowID', 'FirstName', 'LastName', 'MiddleName', 'DOB', 'Phone', 'Email', 'Address', 'Gender', 'Race', 'Location', 'ReasonMissingCourtCategory', 'ReferralSource', 'Notes', 'ClientPhase', 'ClientStatus', 'TICWeek'], 'Clients');
     requireColumns_(identityHeaders, ['ClientID', 'CurrentClientRowID', 'FirstName', 'LastName', 'ClientStatus'], 'ClientIdentities');
 
     const clientRows = clients.getLastRow() > 1
@@ -114,11 +114,8 @@ function buildPhaseTwoClient_(fields, fullName, key, receivedAt, now) {
   const name = splitName_(fullName);
   const date = Utilities.formatDate(receivedAt, CONFIG.TIMEZONE, 'yyyy-MM-dd');
   const today = Utilities.formatDate(now, CONFIG.TIMEZONE, 'yyyy-MM-dd');
-  const notes = [
-    fields.warrantCityCounty && 'Warrant location: ' + fields.warrantCityCounty,
-    fields.missedCirc && 'Missed court: ' + fields.missedCirc,
-    fields.otherQuestions && 'Other questions: ' + fields.otherQuestions
-  ].filter(Boolean).join('\n');
+  // Keep this exact separator even if one of the two answers is blank.
+  const notes = (fields.warrantCityCounty || '') + ' | ' + (fields.otherQuestions || '');
   return {
     ClientID: '', ClientRowID: key,
     FirstName: name.first, LastName: name.last, MiddleName: name.middle,
@@ -127,6 +124,7 @@ function buildPhaseTwoClient_(fields, fullName, key, receivedAt, now) {
     ClientPhase: 'Research', ClientStatus: 'Check Cases',
     TICWeek: upcomingTuesday_(today), FirstContactDate: date,
     DateFormSubmitted: date, Race: fields.race || '', Gender: fields.gender || '',
+    Location: fields.warrantCityCounty || '', ReasonMissingCourtCategory: fields.missedCirc || '',
     ReferralSource: fields.heardHow || '', PrimaryContactMethod: fields.email ? 'Email' : 'Phone',
     OnlineForm: 'Yes', Notes: notes
   };
@@ -472,6 +470,9 @@ function normalizeDobNoLeadingZeros_(dob) {
 
 function splitName_(full) {
   const parts = clean_(full).split(' ').filter(Boolean);
+  // Jr/Sr is a suffix, not a last or middle name. Only ignore it when
+  // another last-name token remains after the first name.
+  if (parts.length >= 3 && /^(jr|sr)\.?$/i.test(parts[parts.length - 1])) parts.pop();
   if (parts.length === 0) return { first: '', middle: '', last: '' };
   if (parts.length === 1) return { first: parts[0], middle: '', last: '' };
   const last = parts[parts.length - 1];
