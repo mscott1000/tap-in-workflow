@@ -16,6 +16,7 @@ const CONFIG = {
 function runIngest() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(CONFIG.LOCK_WAIT_MS)) return;
+  const importedClientRowIds = [];
   try {
     const workbook = SpreadsheetApp.openById(CONFIG.SHEET_ID);
     const clients = workbook.getSheetByName(CONFIG.SHEET_NAME);
@@ -55,12 +56,14 @@ function runIngest() {
               SpreadsheetApp.flush();
               identityIds.add(existingIdentityId);
             }
+            if (existing.PriorTICClient === 'Pending') importedClientRowIds.push(key);
             continue;
           }
           const fields = parseIntakeMessage_(msg);
           const fullName = fields.name || String(msg.getSubject()).replace(/^Intake Form\s*-\s*/i, '').trim();
           if (!fullName || (!fields.phone && !fields.email)) { skipped++; continue; }
           const record = buildPhaseTwoClient_(fields, fullName, key, msg.getDate(), new Date());
+          if (!validIntakeIdentity_(record)) { skipped++; continue; }
           record.ClientID = keyIdentityId;
 
           // Write identity first. If the client append fails, a retry reuses the same identity.
@@ -72,6 +75,7 @@ function runIngest() {
           appendMappedRow_(clients, clientHeaders, record);
           SpreadsheetApp.flush();
           clientByKey.set(key, clientHeaders.map(name => record[name] || ''));
+          importedClientRowIds.push(key);
           created++;
           if (created >= CONFIG.MAX_NEW_CLIENTS_PER_RUN) break;
         }
@@ -81,6 +85,17 @@ function runIngest() {
     }
     console.log('Phase 2 intake: created=' + created + ', skipped=' + skipped);
   } finally { lock.releaseLock(); }
+  // Run only matching checks, after releasing the import lock. The existing
+  // mailbox schedule also supplies one daily history refresh, not minute polling.
+  if (typeof runTICIntakeChecks === 'function') runTICIntakeChecks(importedClientRowIds);
+}
+
+function validIntakeIdentity_(record) {
+  if (!record.FirstName || !record.LastName) return false;
+  const parts = String(record.DOB || '').match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (!parts || Number(parts[3]) < 1900) return false;
+  const check = new Date(Date.UTC(Number(parts[3]), Number(parts[1]) - 1, Number(parts[2])));
+  return check.getUTCFullYear() === Number(parts[3]) && check.getUTCMonth() + 1 === Number(parts[1]) && check.getUTCDate() === Number(parts[2]);
 }
 
 function requireColumns_(headers, required, tabName) {
@@ -126,7 +141,7 @@ function buildPhaseTwoClient_(fields, fullName, key, receivedAt, now) {
     DateFormSubmitted: date, Race: fields.race || '', Gender: fields.gender || '',
     Location: fields.warrantCityCounty || '', ReasonMissingCourtCategory: fields.missedCirc || '',
     ReferralSource: fields.heardHow || '', PrimaryContactMethod: fields.email ? 'Email' : 'Phone',
-    OnlineForm: 'Yes', Notes: notes
+    OnlineForm: 'Yes', Notes: notes, PriorTICClient: 'Pending'
   };
 }
 
