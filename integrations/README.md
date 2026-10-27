@@ -1,18 +1,136 @@
-# Identity and case review integration (prototype)
+# Tap In Center integrations
 
-## Phase 2 Gmail intake importer (prepared 2026-10-26)
+## Current history-check requirements (approved 2026-10-26)
 
-`gmail-phase-two-importer.gs` runs **alongside** the existing `google-intake-form-auto-add`. Install it in a **separate Apps Script project** owned and authorized by the intake mailbox account. Do not replace the old script, add this file to its project (the global names would conflict), or change its trigger. The AppSheet importer keeps its own `runIngest` handler and uses the existing Jotform email parser. For each accepted email, it writes a new `ClientIdentities` row and a linked `Clients` row in the AppSheet POC workbook, with `ClientPhase = Research` and `ClientStatus = Check Cases`. The same email ID supplies stable keys for retry safety. It does not create cases or automatically merge a returning person with an earlier identity. Staff identity review remains separate.
+These checks are ADVISORY ONLY. They do not merge people, change eligibility,
+block submission, filter exports, or carry over the old cell-based whitelist.
+Staff decide what to do after inspecting a match.
 
-**Independent processing:** The AppSheet importer searches matching emails whether read or unread and never marks them read/unread, applies labels, archives, deletes, or sends them. It uses each message ID in `Clients[ClientRowID]` to recognize its own successful imports, independently of the old ingester. Whichever importer runs first, the old ingester's unread-email behavior is not changed by AppSheet. Search results are paged so previously imported threads do not block older pending messages; each run creates at most 50 new Client rows. An import is unique per message, not per person or TIC week.
+### Historical sources (read only)
 
-**First-run caution:** The default search is `subject:"Intake Form -" newer_than:3d`. Unlike the old importer it includes already-read notifications, so a first run can import matching emails from the previous three days. Before the first manual run, restrict `GMAIL_QUERY` to one agreed fictional test notification while retaining the `Intake Form -` subject format. Do not enable its schedule until that test succeeds. Messages outside the three-day search window need a separately approved backfill.
+Workbook: Intake 2026, ID 1TPCAM7rJ9e_YDLrgI4YfjOq_QXZFfo6Sj6c9g9qPth4.
 
-**Installation status:** The user reported that the separately installed importer successfully imported eight Client rows. The latest mapping revision below is saved and synthetically tested in this repository but has NOT been installed or live-tested by the agent: Google again blocked the browser with a verification screen on October 26. To apply it, replace only the code in the existing AppSheet intake Apps Script project with `gmail-phase-two-importer.gs`, save, and retain that project's existing trigger. Do not replace or alter the original Google Sheets importer. Existing message-ID deduplication remains intact; already-imported Client rows are not rewritten. The direct sheet writes intentionally create both linked rows; they do not rely on the AppSheet `Intake Receiver - Phase 2` bot, which runs on AppSheet additions rather than script writes.
+- TIC Graveyard: B First Name, C Last Name, E DOB, H Phone Number.
+- TIC Graveyard F is the only historical case-number source. Its cases WERE
+  submitted previously. G and all other case-number columns are excluded.
+- Completed Call Log: search each cell C:S for phone numbers, including row 1.
+  This tab starts with data, not a header.
+- Compare names/DOBs and phone digits without changing any source formatting.
+  US country code 1, separators and bidirectional marks are ignored for phones.
+  Multiple phones in one cell are extracted individually.
+- Punctuation/capitalization/spacing/accent changes and alternate names are
+  normalized for candidate review. Exact name/DOB and phone-only hits can be
+  presented, but identity is never automatically confirmed or merged.
+- Case matching retains the original uploaded script's complete identifier
+  patterns and case-sensitive comparison. A base case is not its -01 suffix.
+  Missing or unsupported current numbers produce Error, never a clean result.
+- Other rows in Cases are also checked for an AppSheet duplicate, excluding the
+  current CaseID. Court/identity still require staff review.
 
-### Intake field mapping (2026-10-26)
+### Exact displayed titles and states
 
-| Intake email field | Clients column |
+Clients: existing PriorTICClient column, displayed as **Previous Client Check**:
+
+- Pending (default)
+- No Client Match
+- Match Found - Awaiting Confirmation
+- Repeat Client Confirmed
+- Error
+
+Dismissed person candidates result in No Client Match when all current matches
+have been dismissed. Confirmations/dismissals are per candidate, with reviewer
+and time. Changed identifying inputs get fresh review candidates; old audit rows
+remain intact and are filtered out of current-match lists.
+
+Cases: virtual RepeatCaseCheck, displayed as **Repeat Case Check**:
+
+- Pending
+- No Case Match
+- Match Found - Awaiting Confirmation
+- Duplicate AppSheet Entry
+- Error
+
+Historical matches take display precedence over AppSheet duplicates; both stay
+in the evidence list. No automatic exclusion or gated submission is permitted.
+
+### Code and storage
+
+- identity-review-core.js: pure normalization, candidate and advisory-state rules.
+- identity-review-adapter.gs: shared row checks and once-daily refresh.
+- gmail-phase-two-importer.gs: independent Gmail importer plus history hook.
+- identity-review-core.test.js and gmail-phase-two-importer.test.cjs: synthetic
+  tests. No operational client records or historical values are stored here.
+
+The adapter uses Clients, Cases, ClientRowID and CaseID only. Existing
+IdentityCandidates and CaseMatchCandidates tabs hold candidate rows and hidden
+check-summary rows. SourceFingerprint records the checked input signature;
+stable candidate IDs also incorporate the historical record content so a source
+row move does not discard an existing review decision. SourceRow is updated on
+the next check to keep historical links current. Staff must still verify the
+linked record if the source has been rearranged since the last check.
+
+AppSheet virtual HistoryCheckInput helpers and filtered PreviousClientMatches /
+RepeatCaseMatches lists require no Clients/Cases sheet-schema regeneration.
+Case results are derived from current evidence and the check-summary row.
+The adapter writes only PriorTICClient and PriorTICClientReason on Clients, plus
+the two review tabs. It never modifies Cases or either historical source tab.
+
+### When checks run
+
+- runIngest calls runTICIntakeChecks after releasing the import lock.
+- New imports and interrupted Pending imports request their own checks.
+- The existing import schedule supplies at most one full refresh per Chicago
+  calendar day, including one failed-source attempt. No extra minute polling or
+  separate high-frequency matching trigger is created.
+- AppSheet client add/update events should call checkClientHistory(ClientRowID)
+  only when first name, last name, DOB or phone changes.
+- AppSheet case add/update events should call checkCaseHistory(CaseID) when case
+  number or jurisdiction changes. Counterpart cases are rechecked as well so an
+  old duplicate warning clears when the duplicate is corrected.
+- IdentityCandidates review-decision updates should call checkClientHistory.
+- A completed background check is shown in a user's app after sync.
+
+### Live status at the authorization checkpoint
+
+The shared standalone Apps Script project **AppSheet Intake** is:
+https://script.google.com/home/projects/12e-XiMzRPQvbJEZ9Xr24wwnvOPoKcqgO8hyRPCi45iiCoZyfnRvmJYkz/edit
+
+The three tested code files are saved there as appsheet-intake-forms.gs,
+history-match-core.gs and history-match-adapter.gs. Readback matched the tested
+local code. The importer is still owned/authorized by the intake mailbox account;
+its existing trigger has not been changed or recreated by the editing account.
+
+The AppSheet title/options for Previous Client Check and the new virtual helpers,
+case check and evidence-link columns have been saved without schema regeneration.
+A Clients event/script task is staged as an UNSAVED draft at the Authorize step.
+It is not active. AppSheet requires authorization of this script project before
+the function/parameter binding and event bots can be completed. Do not authorize
+a broader Gmail permission silently: this shared project also contains Gmail code.
+The case/review event bots, staff confirmation/dismissal actions, final view
+placement, warning format rules and end-to-end live verification are unfinished.
+No claim is made that scheduled matching is operational until an actual owner-
+trigger execution and its results have been verified.
+
+## Independent Gmail intake importer
+
+The AppSheet importer runs alongside google-intake-form-auto-add in a SEPARATE
+Apps Script project. Never paste it into the original project's global scope,
+replace the old importer, or change the old trigger.
+
+It searches subject:"Intake Form -" newer_than:3d whether read or unread. It does
+not mark emails read/unread, label, archive, delete or send them. Message ID
+supplies ClientRowID and a retry-safe new ClientID. It creates a ClientIdentities
+row and a linked Clients row with ClientPhase Research and ClientStatus Check
+Cases; it does not create Cases or merge returning people.
+
+Default paging is 50 threads, with at most 50 new Client rows per run. A first
+run can include matching already-read notifications from the previous three days.
+A Gmail thread returned by the query can contain older messages; uniqueness is
+per message, not per person or TIC week.
+
+### Intake mapping
+
+| Email question | Clients destination |
 | --- | --- |
 | Your Name | FirstName, MiddleName, LastName |
 | Current Address | Address |
@@ -24,44 +142,26 @@
 | What county or city was the warrant issued in? | Location |
 | Please explain the circumstance for the missed court date | ReasonMissingCourtCategory |
 | How did you hear about the Tap In Center | ReferralSource |
-| Do you have any other questions for the Tap In Center? | Notes, combined with Location as below |
+| Do you have any other questions for the Tap In Center? | Notes, combined with Location |
 
-The first name token becomes FirstName and the last token becomes LastName. A final Jr, Jr., Sr, or Sr. (case-insensitive) is excluded when a separate last name remains; the preceding token becomes LastName. Tokens between the first and last name become MiddleName. Suffixes are not stored in MiddleName or LastName. Other suffixes are not specially interpreted.
+First token is FirstName; last token is LastName. A final Jr/Jr./Sr/Sr. is
+excluded when a separate last-name token remains. Intervening tokens are
+MiddleName. Full first/last name and a valid four-digit DOB are required for a new
+import; incomplete notifications remain untouched for correction and are counted
+as skipped in the execution log. Existing contact requirements remain unchanged.
 
-Notes is exactly `Location + " | " + other-questions answer`, with no labels and no other intake answers added. The separator remains even when either answer is blank. Location and ReasonMissingCourtCategory are also written to their own Clients columns. All requested destination headers are checked before importing so missing columns cannot silently discard mapped answers. No Case rows are created or changed. Existing phone/address/date normalization and Phase 2 defaults remain unchanged.
+Notes is exactly Location + " | " + the other-questions answer, including the
+separator when an answer is blank. Existing phone/address/date normalization is
+preserved. PriorTICClient begins as Pending.
 
-**Synthetic verification:** `node integrations/gmail-phase-two-importer.test.cjs` checks every requested mapping in HTML and four plain-text layouts, Jr/Sr handling, the exact Notes format (including blank answers), missing destination headers, both importer orders, unchanged read state, linked-row mapping, duplicate prevention, interrupted writes, pagination beyond 50 threads, and new messages in an already-seen conversation. These are mocked tests, not evidence of Gmail authorization or live installation.
+## Synthetic verification
 
-## Source findings, 2026-10-22
-
-The supplied `Intake 2026` workbook contains a **TIC Graveyard** tab, not a separate workbook. Its visible headings include TIC Week, First Name, Last Name, DOB, Eligible Cases, Ineligible Cases, Phone Number, and Email Address. The supplied scripts do three different jobs:
-
-- Gmail Jotform ingestion appends to Weekly Call Log; its prior-client check compares normalized first and last names only.
-- Google Voice ingestion logs calls/voicemails and checks names and phones against Weekly Call Log and Completed Call Log.
-- The sheet edit handler checks phone duplicates and extracts selected case-number formats from graveyard case text; a cell-address whitelist suppresses red coloring.
-
-These scripts are useful inputs to a **candidate** workflow. None establishes a stable ClientID or proves a case was submitted. They rely on Sheet edits, which are not the trigger path for AppSheet additions or script writes.
-
-## Prototype changes already made
-
-The AppSheet POC workbook has nine new fields on `ServiceEpisodes` (the source of the `ClientInstances` app table): FirstName, LastName, MiddleName, DOB, Phone, Email, Address, StaffNotes, IdentityReviewStatus. The `IdentityCandidates` and `CaseMatchCandidates` tabs are empty review stores. Their AppSheet tables allow updates, but not adds or deletes. The `EpisodeID` / `CaseID` columns are references to the parent tables.
-
-The ClientInstance detail has **Cases for this TIC Week** and **Prior Cases**. Prior Cases currently covers other POC cases with the same existing ClientID, not the operational Graveyard. Its source is `PriorCases_ReadOnly`, so staff cannot add from that list. The first section allows Add for Phase 2–5. Internal EpisodeID and ClientID are hidden from the detail.
-
-## Code status
-
-`identity-review-core.js` is pure matching logic. It proposes people when DOB and name/contact support a match, including limited typo tolerance and last-name change with DOB plus contact. It extracts the legacy case-number patterns and flags a repeat case number for review. It never merges people or marks a case as previously submitted. Synthetic checks are in `identity-review-core.test.js`.
-
-`identity-review-adapter.gs` is a **prepared, not installed** Apps Script prototype. It reads the Graveyard and POC instance/case rows, and appends new candidate records without copying the full historical dataset. It needs both files in one Apps Script project, Script Properties `SOURCE_SPREADSHEET_ID` and `POC_SPREADSHEET_ID`, permission to read the former/write the latter, and a time-driven trigger or manual run. A linked operational importer should not be edited just to install this prototype.
-
-## Remaining before live identity assignment
-
-1. Complete the ClientInstance field migration and move the app's identity reference away from the old `Clients` row key, which encodes name and DOB. Existing fictional rows need a safe backfill. New ClientIDs should be opaque, automatic, and stable.
-2. Define and build staff review decisions that link a confirmed historical person to an existing ClientID or keep a new one. A candidate alone must never cause a merge. Add a stable historical row identifier/fingerprint; legacy row numbers can shift.
-3. Connect the review candidate list to an obvious action on the ClientInstance, show the source evidence, and protect non-decision fields from edits.
-4. Tie linked historical case records to confirmed ClientIDs for **Prior Cases**. The current POC's `HistoricalCaseIndex` lacks person links; merely finding a matching number is not proof of submission.
-5. Add an audited, serialized once-ever submission check by court and case number. Confirmed previous submission blocks export. The legacy whitelist must not bypass this.
-6. Test intake by email, manual instance creation, manual Case creation, duplicate input, ambiguous match, and return in a later TIC week with fictional data before enabling an operational trigger.
-
-No operational Graveyard rows, email bodies, names, DOBs, phone numbers, or case numbers are stored in this repository.
+Run the two repository test scripts in a development runtime. They cover all
+intake mappings in HTML and plain text; suffix names; exact Notes formatting;
+required identity data; independent importer order/read state; retry safety;
+pagination; message deduplication; historical phone/name/DOB matching; row-1
+call-log data; F-only submitted cases; exact suffixes; source permission errors;
+staff review persistence; edited inputs; duplicate counterpart refresh; and one
+daily refresh. These tests do not establish live Gmail authorization, owner
+trigger operation, AppSheet licensing or app-bot authorization.
 
