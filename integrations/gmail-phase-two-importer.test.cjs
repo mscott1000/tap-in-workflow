@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const source = fs.readFileSync(__dirname + '/gmail-phase-two-importer.gs', 'utf8');
-const clientHeaders = ['ClientID','ClientRowID','FirstName','LastName','MiddleName','DOB','Phone','Email','Address','ClientPhase','ClientStatus','TICWeek','FirstContactDate','DateFormSubmitted','Race','Gender','Location','ReasonMissingCourtCategory','ReferralSource','PrimaryContactMethod','OnlineForm','Notes'];
+const clientHeaders = ['ClientID','ClientRowID','FirstName','LastName','MiddleName','DOB','Phone','Email','Address','ClientPhase','ClientStatus','TICWeek','FirstContactDate','DateFormSubmitted','Race','Gender','Location','ReasonMissingCourtCategory','ReferralSource','PrimaryContactMethod','OnlineForm','Notes','PriorTICClient','PriorTICClientReason'];
 const identityHeaders = ['ClientID','FirstName','LastName','MiddleName','DOB','Phone','Email','Address','ClientStatus','CurrentClientRowID','TICWeek','FirstContactDate','DateFormSubmitted','Race','Gender','ReferralSource','ReferToTBP','ReferToHolland','PrimaryContactMethod','OnlineForm','Notes','Log'];
 const clientRows = [clientHeaders], identityRows = [identityHeaders];
 let unread = true, failAfterClientWrite = true, failClientAppend = false, flushCount = 0, messageId = 'fixture-001';
@@ -47,6 +47,7 @@ assert.equal(identity.ClientID,client.ClientID); assert.equal(identity.CurrentCl
 assert.equal(identity.ClientStatus,'Check Cases'); assert.equal(identity.FirstName,client.FirstName);
 assert.equal(identity.ReferToTBP,'No'); assert.equal(identity.ReferToHolland,'No');
 assert.equal(client.FirstName,'Fictional'); assert.equal(client.MiddleName,'Middle'); assert.equal(client.LastName,'Test');
+assert.equal(client.PriorTICClient,'Pending');
 assert.equal(client.Phone,'(314) 555-0100'); assert.equal(client.DOB,'7-17-1996');
 assert.equal(client.DateFormSubmitted,'2026-10-24'); assert.equal(client.Notes,' | =formula-like input');
 messageId='fixture-002'; unread=true; failClientAppend=true;
@@ -131,6 +132,20 @@ const locationIndex=clientHeaders.indexOf('Location');
 clientHeaders.splice(locationIndex,1);
 assert.throws(()=>ctx.runIngest(), /Missing Clients column: Location/);
 clientHeaders.splice(locationIndex,0,'Location');
+// The importer hands successful and interrupted Pending rows to the history checker.
+const historyRequests=[];
+ctx.runTICIntakeChecks=ids=>historyRequests.push([...ids]);
+messages=[{...msg,getId:()=> 'history-hook-fixture'}];
+const beforeHistory=clientRows.length;
+ctx.runIngest();
+assert.equal(clientRows.length,beforeHistory+1);
+assert.deepEqual(historyRequests[0],['gmail_history-hook-fixture']);
+ctx.runIngest();
+assert.deepEqual(historyRequests[1],['gmail_history-hook-fixture']);
+assert.equal(clientRows.length,beforeHistory+1);
+assert.equal(ctx.validIntakeIdentity_({FirstName:'Example',LastName:'Person',DOB:'2-30-1990'}),false);
+assert.equal(ctx.validIntakeIdentity_({FirstName:'Example',LastName:'',DOB:'2-13-1990'}),false);
+assert.equal(ctx.validIntakeIdentity_({FirstName:'Example',LastName:'Person',DOB:'2-13-1990'}),true);
 console.log('PASS: all requested mappings in HTML and four plain-text layouts, Jr/Sr names, exact notes, required headers, linked rows, retries, both importer orders, unchanged read state, pagination, deduplication and dates');
 
 
