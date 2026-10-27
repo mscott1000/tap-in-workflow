@@ -1,36 +1,51 @@
-/* Shared, side-effect-free matching rules for the AppSheet intake adapter.
- * This file contains no case or client data. It is compatible with Apps Script.
- */
+/* Advisory history matching. No merges, eligibility changes, exports or mail writes. */
 var TICIdentity = (function () {
   function name(value) {
     return String(value || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
       .toLowerCase().replace(/[^a-z]/g, '');
   }
 
-  function phone(value) {
-    var digits = String(value || '').replace(/\D/g, '');
-    if (digits.length === 11 && digits[0] === '1') digits = digits.slice(1);
-    return digits.length === 10 ? digits : '';
+  function aliases(value) {
+    var raw = String(value || '');
+    var choices = [raw].concat(raw.split(/[,/()[\]]|\baka\b|\bformerly\b/i));
+    return Array.from(new Set(choices.map(name).filter(function (s) {
+      return !!s && s !== 'jr' && s !== 'sr';
+    })));
   }
 
-  function email(value) {
-    return String(value || '').trim().toLowerCase();
+  function phones(value) {
+    var text = String(value === null || value === undefined ? '' : value)
+      .replace(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, '');
+    var re = /(?:^|[^\d])((?:\+?1[\s.\-]*)?(?:\(\s*\d{3}\s*\)|\d{3})[\s.\-]*\d{3}[\s.\-]*\d{4})(?!\d)/g;
+    var found = [], match;
+    while ((match = re.exec(text)) !== null) {
+      var digits = match[1].replace(/\D/g, '');
+      if (digits.length === 11 && digits[0] === '1') digits = digits.slice(1);
+      if (digits.length === 10) found.push(digits);
+    }
+    return Array.from(new Set(found));
   }
+
+  function phone(value) { return phones(value)[0] || ''; }
+  function email(value) { return String(value || '').trim().toLowerCase(); }
 
   function dob(value) {
     if (value instanceof Date && !isNaN(value.getTime())) {
       return [value.getFullYear(), String(value.getMonth() + 1).padStart(2, '0'),
         String(value.getDate()).padStart(2, '0')].join('-');
     }
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 100000) {
+      return new Date(Date.UTC(1899, 11, 30) + Math.floor(value) * 86400000).toISOString().slice(0, 10);
+    }
     var text = String(value || '').trim();
     var iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(text);
-    var us = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(text);
+    var us = /^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/.exec(text);
     var y = iso ? +iso[1] : us ? +us[3] : 0;
     var m = iso ? +iso[2] : us ? +us[1] : 0;
     var d = iso ? +iso[3] : us ? +us[2] : 0;
-    if (!y || !m || !d || m > 12 || d > 31) return '';
-    var check = new Date(y, m - 1, d);
-    if (check.getFullYear() !== y || check.getMonth() !== m - 1 || check.getDate() !== d) return '';
+    if (y < 1900 || !m || !d || m > 12 || d > 31) return '';
+    var check = new Date(Date.UTC(y, m - 1, d));
+    if (check.getUTCFullYear() !== y || check.getUTCMonth() !== m - 1 || check.getUTCDate() !== d) return '';
     return [y, String(m).padStart(2, '0'), String(d).padStart(2, '0')].join('-');
   }
 
@@ -47,32 +62,45 @@ var TICIdentity = (function () {
     return changes + (i < a.length || j < b.length ? 1 : 0) <= 1;
   }
 
+  function sameAlias(a, b) {
+    return a.some(function (x) { return b.indexOf(x) !== -1; });
+  }
+
+  function closeAlias(a, b) {
+    return a.some(function (x) {
+      return b.some(function (y) {
+        return x === y || (x.length >= 4 && y.length >= 4 && distanceAtMostOne(x, y));
+      });
+    });
+  }
+
   function personCandidates(current, historicalRows) {
-    var a = { first: name(current.first), last: name(current.last), dob: dob(current.dob),
-      phone: phone(current.phone), email: email(current.email) };
+    var first = aliases(current.first), last = aliases(current.last);
+    var birth = dob(current.dob), contact = phones(current.phone);
     return historicalRows.map(function (row) {
-      var b = { first: name(row.first), last: name(row.last), dob: dob(row.dob),
-        phone: phone(row.phone), email: email(row.email) };
-      var sameDob = !!a.dob && a.dob === b.dob;
-      var samePhone = !!a.phone && a.phone === b.phone;
-      var sameEmail = !!a.email && a.email === b.email;
-      var sameName = !!a.first && !!a.last && a.first === b.first && a.last === b.last;
-      var firstClose = a.first.length >= 4 && b.first.length >= 4 && distanceAtMostOne(a.first, b.first);
-      var lastClose = a.last.length >= 4 && b.last.length >= 4 && distanceAtMostOne(a.last, b.last);
+      var oldFirst = aliases(row.first), oldLast = aliases(row.last), oldBirth = dob(row.dob);
+      var oldPhones = row.phones || phones(row.phone);
+      var samePhone = contact.some(function (p) { return oldPhones.indexOf(p) !== -1; });
+      var sameName = sameAlias(first, oldFirst) && sameAlias(last, oldLast);
+      var sameDob = !!birth && birth === oldBirth;
       var reasons = [];
-      if (sameDob && sameName) reasons.push('same name and DOB');
-      if (sameDob && samePhone) reasons.push('same DOB and phone');
-      if (sameDob && sameEmail) reasons.push('same DOB and email');
-      if (sameDob && firstClose && lastClose && !sameName) reasons.push('similar name and same DOB');
-      if (sameName && (samePhone || sameEmail) && !sameDob) reasons.push('same name and contact');
-      // Name alone and phone alone are too weak to present as identity evidence.
-      return reasons.length ? { sourceRef: row.sourceRef, reasons: reasons,
-        clientId: row.clientId || '' } : null;
+      if (sameName && sameDob) reasons.push('same first/last name and DOB');
+      else if (sameName) reasons.push(oldBirth ? 'same first/last name; DOB differs' : 'same first/last name; historical DOB unavailable');
+      else if (sameDob && closeAlias(first, oldFirst) && closeAlias(last, oldLast)) {
+        reasons.push('similar first/last name and same DOB');
+      }
+      if (samePhone) reasons.push('same phone number' + (sameDob ? ' and DOB' : ''));
+      return reasons.length ? {
+        sourceRef: row.sourceRef, sourceTab: row.sourceTab, sourceRow: row.sourceRow,
+        sourceToken: row.sourceToken, reasons: reasons, clientId: row.clientId || ''
+      } : null;
     }).filter(Boolean);
   }
 
+  // Retain the uploaded script's complete identifiers, suffixes and case-sensitive comparison.
   function caseNumber(value) {
-    return String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+    return String(value || '').replace(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, '')
+      .trim().replace(/\s+/g, '');
   }
 
   function caseNumbersInText(value) {
@@ -82,24 +110,42 @@ var TICIdentity = (function () {
     return Array.from(new Set(matches));
   }
 
+  function supportedCase(value) {
+    return /^(?:[A-Za-z0-9]{4}-[A-Za-z0-9]{7}(?:-[A-Za-z0-9]{2})?|[0-9]{9})$/.test(caseNumber(value));
+  }
+
   function caseCandidates(current, historicalRows) {
     var number = caseNumber(current.caseNumber);
-    var court = name(current.court);
-    if (!number) return [];
+    if (!number || !supportedCase(number)) return [];
     return historicalRows.filter(function (row) {
       return (row.caseNumbers || [row.caseNumber]).some(function (n) { return caseNumber(n) === number; });
     }).map(function (row) {
-      var oldCourt = name(row.court);
-      return { sourceRef: row.sourceRef,
-        reason: court && oldCourt && court === oldCourt ? 'same court and case number' :
-          'same case number; court needs review',
-        submissionStatus: 'UNKNOWN - VERIFY' };
+      return {
+        sourceRef: row.sourceRef, sourceTab: row.sourceTab, sourceRow: row.sourceRow,
+        sourceToken: row.sourceToken,
+        reason: row.sourceTab === 'Cases' ? 'same case number in another AppSheet Case row; verify court and identity' :
+          'same complete case number in TIC Graveyard column F (previously submitted)',
+        submissionStatus: row.sourceTab === 'Cases' ? 'Duplicate AppSheet Entry' : 'Previously submitted'
+      };
     });
   }
 
-  return { name: name, phone: phone, email: email, dob: dob,
-    personCandidates: personCandidates, caseNumber: caseNumber,
-    caseNumbersInText: caseNumbersInText, caseCandidates: caseCandidates };
-})();
+  function clientStatus(matches) {
+    if (matches.some(function (m) { return m.Decision === 'Confirmed'; })) return 'Repeat Client Confirmed';
+    if (matches.some(function (m) { return m.Decision !== 'Dismissed'; })) return 'Match Found - Awaiting Confirmation';
+    return 'No Client Match';
+  }
 
+  function caseStatus(matches) {
+    var active = matches.filter(function (m) { return m.Decision !== 'Dismissed'; });
+    if (active.some(function (m) { return m.SourceTab === 'TIC Graveyard'; })) return 'Match Found - Awaiting Confirmation';
+    if (active.some(function (m) { return m.SourceTab === 'Cases'; })) return 'Duplicate AppSheet Entry';
+    return 'No Case Match';
+  }
+
+  return { name: name, aliases: aliases, phone: phone, phones: phones, email: email, dob: dob,
+    personCandidates: personCandidates, caseNumber: caseNumber, supportedCase: supportedCase,
+    caseNumbersInText: caseNumbersInText, caseCandidates: caseCandidates,
+    clientStatus: clientStatus, caseStatus: caseStatus };
+})();
 if (typeof module !== 'undefined') module.exports = TICIdentity;
