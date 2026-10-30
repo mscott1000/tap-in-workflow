@@ -13,7 +13,7 @@
 
 Connected tools can edit Sheets, but cannot save AppSheet settings or install Apps Script. AGENTS.md rules 9–10 require user installation and prohibit automated login or live-script runs. No scripts or AppSheet settings were installed/saved by this task. The last independently observed AppSheet version remains 1.000584 from October 29.
 
-The editor categories below identify AppSheet configuration objects. Current editor menu labels were not inspected in this task. Proposed new names below are deliberate new names, not claims about existing objects. Reuse an existing equivalent object if present; do not create a second timestamp-change bot.
+The editor categories below identify AppSheet configuration objects. Current editor menu labels were not inspected in this task. The existing Case_Form name was explicitly confirmed by the user. Proposed new names below are deliberate new names, not claims about existing objects. Reuse an existing equivalent object if present; do not create a second timestamp-change bot.
 
 ### 1. Install only the three changed files
 
@@ -63,19 +63,19 @@ AND(
 
 A background bot cannot navigate the staff browser when its parser returns a fallback. The implementable fallback is an explicit **Add Case** action on the Client row, available whether generation succeeds or not. With no supported number, the script creates no Case and returns `manualCaseRequired: true` plus an instruction to open Add Case. Do not create a draft Case or submit an empty Case.
 
-If an existing Case form is already suitable, use its exact view name in LINKTOFORM. Otherwise create a reference-position Form view on the existing `Cases` table named **Add Case for Client**. This is a new form, not a replacement of any existing view or layout. Keep the existing Case field defaults and validation; CASEID must retain its unique initial value. Verify CLIENTROWID is the reference to Clients and CLIENTID is the parent identity.
+The user confirmed the existing Case form view is **Case_Form**. Use it; do not create another form or reset its layout. CASEID retains its unique initial value; verify CLIENTROWID is the reference to Clients and CLIENTID is the parent identity.
 
 Configure a Clients action named **Add Case**, type **App: go to another view within this app**, target:
 
 ```appsheet
 LINKTOFORM(
-  "Add Case for Client",
+  "Case_Form",
   "ClientRowID", [ClientRowID],
   "ClientID", [ClientID]
 )
 ```
 
-If reusing an existing form, replace only the first literal string above with its observed exact view name. Show the action on the Client detail. Leave it available without a history/eligibility condition. Open it on a fictional Client, confirm the correct parent is prefilled, then cancel without saving. The user fills a manual Case through the existing validation; no fabricated case number or special work-row type is used.
+Show the action on the Client detail. Leave it available without a history/eligibility condition. Open it on a fictional Client, confirm the correct parent is prefilled, then cancel without saving. The user fills a manual Case through the existing validation; no fabricated case number or special work-row type is used.
 
 ### 4. Show warnings and repeat-check results
 
@@ -181,7 +181,7 @@ Keep **Cases for this TIC Week** and **Prior Cases** sections. Current-week Case
 
 ## Live verification: not yet performed
 
-No operational records are fixtures. Identify an explicitly fictional Client row approved for this test before any live generation. The user, not Codex, runs the following through AppSheet after installation:
+No operational records are fixtures. A bounded current search found no DEMO- identifiers in Clients!A1:B986, so the historical demo list cannot be treated as current fixture proof. Identify an explicitly fictional Client row before any live generation; do not select an operational record just to finish testing. The user, not Codex, runs the following through AppSheet after installation:
 
 1. Record its CLIENTROWID and initial linked Case count privately. Use its existing approved synthetic eligible-case text. If it has no such text, agree the exact fixture content first rather than altering operational notes.
 2. Select Generate Cases once; wait for automation completion and sync. Verify linked keys, CHARGECLASS O or A–E, canonical court, CASEPHASE Request, visible warnings, and a non-Pending history result or explicit Error. A match is advisory, not an eligibility decision.
@@ -192,6 +192,6 @@ No operational records are fixtures. Identify an explicitly fictional Client row
 
 ## Remaining boundaries
 
-- Current AppSheet form/view configuration has not been inspected through an editor tool. The expressions above are prepared, not saved or UI-verified.
+- Current AppSheet configuration has not been inspected through an editor tool. The user confirmed Case_Form. Connected Drive returned no native Apps Script files, and there is no live Apps Script source-reading tool, so newer legacy-generator edits remain unverified. The expressions above are prepared, not saved or UI-verified.
 - The uploaded Voice importer's 500-thread cap is preserved. A capped scan leaves its checkpoint unchanged and reports incomplete; repeated capped windows can remain backlogged. Tests do not claim progress beyond that limit. This task does not install or run the Voice importer.
 - The generator still follows the existing requested behavior of parsing the Client's ELIGIBLECASES/ELIGIBLENOTES and creating Request Cases; it does not decide eligibility, merge identities, send messages, or submit court requests.

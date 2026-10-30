@@ -46,6 +46,6 @@ Live Sheet configuration changed: **yes**, validation only. Live record values c
 
 Install the three changed files, save/bind the generator and manual-Case history bots, configure manual Add Case and display expressions, inspect Client-row Request/Graveyard sources, and run an explicitly agreed fictional live fixture twice. Exact steps are in the dated handoff; no further code development is deferred to the user.
 
-Current editor access is unavailable through connected tools. No fixture was agreed or live script run authorized. The uploaded Voice 500-thread cap is preserved and can remain backlogged on repeated full windows; this task tests and documents the limit, not a new Voice design.
+The user confirmed the existing form view is Case_Form; the prepared Add Case action uses it and does not add a form. Current editor access is unavailable through connected tools. No verified fictional fixture has been identified; no live run was attempted. A bounded search found no DEMO- keys in Clients!A1:B986. Connected Drive also returned no native Apps Script files, so it cannot establish newer generator-source edits. The uploaded Voice 500-thread cap is preserved and can remain backlogged on repeated full windows; this task tests and documents the limit, not a new Voice design.
 
 Repository code is prepared, not installed. The generator's manual fallback is an explicit staff action, not an automatic browser redirect. No live end-to-end success is claimed.
