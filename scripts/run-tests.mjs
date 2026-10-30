@@ -6,6 +6,7 @@ const tests = [
   'integrations/gmail-phase-two-importer.test.cjs',
   'integrations/identity-review-core.test.js',
   'integrations/eligible-cases-core.test.js',
+  'integrations/eligible-cases-adapter.test.cjs',
   'integrations/voice-communications.test.cjs',
   'tests/workflow.test.mjs'
 ];

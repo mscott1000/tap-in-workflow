@@ -109,7 +109,7 @@ const caseRows=()=>records(caseMatchHeaders,caseMatches);
 const client=()=>asObject(clientHeaders,clients[1]);
 const summary=id=>caseRows().find(r=>r.CandidateID==='CASE-CHECK-'+id);
 context.refreshTICReviewCandidates();
-assert.equal(client().PriorTICClient,'Match Found - Awaiting Confirmation');
+assert.equal(client().PriorTICClient,'Match - Awaiting Confirmation');
 assert.equal(asObject(clientHeaders,clients[2]).PriorTICClient,'No Client Match');
 assert.equal(personRows().filter(r=>r.ClientRowID==='client-a'&&r.SourceTab!=='Check summary').length,2);
 assert.equal(summary('case-a').SubmissionStatus,'Match Found - Awaiting Confirmation');
@@ -137,7 +137,7 @@ assert.equal(client().PriorTICClient,'No Client Match');
 // Changed current inputs must not inherit confirmations or dismissals from older inputs.
 clients[1][5]='3145550199';
 context.checkClientHistory('client-a');
-assert.equal(client().PriorTICClient,'Match Found - Awaiting Confirmation');
+assert.equal(client().PriorTICClient,'Match - Awaiting Confirmation');
 assert.ok(personRows().some(r=>r.SourceTab==='Completed Call Log'&&r.SourceRow==='1'));
 sourceDenied=true;context.checkClientHistory('client-a');
 assert.equal(client().PriorTICClient,'Error');
@@ -165,3 +165,9 @@ context.runTICIntakeChecks(['client-a']);
 assert.equal(sourceReads,beforeDaily+2,'A new intake still gets its own event-driven check');
 assert.equal(lockHeld,false);
 console.log('PASS: name/DOB/phone normalization, both historical tabs, first call-log row, F-only cases, exact suffixes, advisory-only writes, review persistence, stale-input invalidation, source errors, counterpart duplicates, one daily refresh.');
+
+// Date-only cells from the working GMT workbook must not shift to the prior Chicago day.
+assert.equal(context.ticDate_(new Date('1990-02-13T00:00:00Z'),'Etc/GMT'),'1990-02-13');
+assert.equal(context.ticDate_(new Date('1990-02-13T06:00:00Z'),'America/Chicago'),'1990-02-13');
+assert.equal(match.clientStatus([{Decision:'Pending review'}]),'Match - Awaiting Confirmation');
+assert(!match.caseCandidates({caseNumber:'250362633'},[{sourceTab:'Cases',caseNumber:'250362633'}])[0].reason.includes('same TICWeek'));

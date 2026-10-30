@@ -1,3 +1,5 @@
+> **Current installation handoff (2026-10-30):** [Generator and AppSheet steps](GENERATOR_HANDOFF_2026-10-30.md). Install only the two changed history files and the combined generator in AppSheet Intake. The original four user uploads are permanently preserved under integrations/source-snapshots/2026-10-30/.
+
 # Script source and user installation
 
 GitHub is the source of truth for maintained code. Copy only the approved changed files from the exact commit linked in the task handoff.
@@ -10,11 +12,11 @@ The machine-readable map is ../config/script-installation.json.
 
 | Repository source | Apps Script project | Editor file name | Current state |
 | --- | --- | --- | --- |
-| integrations/gmail-phase-two-importer.gs | AppSheet Intake | appsheet-intake-forms | Maintained copy; live equality needs confirmation |
-| integrations/identity-review-core.js | AppSheet Intake | history-match-core | Maintained copy; live equality needs confirmation |
-| integrations/identity-review-adapter.gs | AppSheet Intake | history-match-adapter | Maintained copy; live equality needs confirmation |
-| integrations/voice-communications.gs | AppSheet Intake | voice-communications | Candidate; reconcile before replacement |
-| integrations/eligible-cases-install.gs | AppSheet Intake | eligible-cases-install | Candidate; known generator gaps; do not install yet |
+| integrations/gmail-phase-two-importer.gs | AppSheet Intake | appsheet-intake-forms | Reconciled with user upload; no importer replacement needed |
+| integrations/identity-review-core.js | AppSheet Intake | history-match-core | Tested history update; compare post-upload edits, then replace |
+| integrations/identity-review-adapter.gs | AppSheet Intake | history-match-adapter | Tested history update; compare post-upload edits, then replace |
+| integrations/voice-communications.gs | AppSheet Intake | voice-communications | Reconciled with user upload; no Voice replacement needed |
+| integrations/eligible-cases-install.gs | AppSheet Intake | eligible-cases-install | Tested generator update; add to AppSheet Intake per dated handoff |
 
 AppSheet Intake: https://script.google.com/home/projects/12e-XiMzRPQvbJEZ9Xr24wwnvOPoKcqgO8hyRPCi45iiCoZyfnRvmJYkz/edit
 

@@ -1,8 +1,10 @@
-> **Current workflow:** Read [Current project](../docs/CURRENT_PROJECT.md) and [Script installation](../docs/SCRIPT_INSTALLATION.md) first. GitHub holds maintained code; the user copies only approved changed files into Apps Script. Dated live-installation notes below are historical checkpoints, not proof of today's installed code. Voice/generator copies remain candidates until reviewed.
+> **Latest work:** [2026-10-30 generator handoff](../docs/GENERATOR_HANDOFF_2026-10-30.md). Script uploads are archived with hashes; code is prepared and tested, not newly installed.
+
+> **Current workflow:** Read [Current project](../docs/CURRENT_PROJECT.md) and [Script installation](../docs/SCRIPT_INSTALLATION.md) first. GitHub holds maintained code; the user copies only approved changed files into Apps Script. Dated live-installation notes below are historical checkpoints, not proof of today's installed code. The 2026-10-30 handoff records reconciled uploads and tested generator changes.
 
 # Tap In Center integrations
 
-## Current history-check requirements (approved 2026-10-26)
+## History-check requirements (approved 2026-10-26; Client wording reconciled 2026-10-30)
 
 These checks are ADVISORY ONLY. They do not merge people, change eligibility,
 block submission, filter exports, or carry over the old cell-based whitelist.
@@ -35,7 +37,7 @@ Clients: existing PriorTICClient column, displayed as **Previous Client Check**:
 
 - Pending (default)
 - No Client Match
-- Match Found - Awaiting Confirmation
+- Match - Awaiting Confirmation
 - Repeat Client Confirmed
 - Error
 

@@ -71,49 +71,201 @@ var TICVoice = (function () {
 function runTICVoiceIngest() {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) return;
+
   try {
+    var props = PropertiesService.getScriptProperties();
+    var checkpointKey = 'TIC_VOICE_LAST_SUCCESS';
+    var now = Date.now();
+
+    // First run: search 3 days.
+    // Later runs: search from last success, with 6-hour overlap.
+    var lastSuccess = Number(props.getProperty(checkpointKey)) || 0;
+    var cutoff = lastSuccess
+      ? lastSuccess - 6 * 3600000
+      : now - 3 * 86400000;
+
+    var query =
+      'after:' + Math.floor(cutoff / 1000) +
+      ' {subject:"New missed call from" subject:"New voicemail from"}';
+
     var book = SpreadsheetApp.openById(CONFIG.SHEET_ID);
     var sheet = book.getSheetByName('Communications');
-    if (!sheet) throw new Error('Communications tab is not configured.');
-    var headers = sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0].map(String);
-    TICVoice.headers.forEach(function (h) { if (headers.indexOf(h) < 0) throw new Error('Missing Communications column: ' + h); });
+
+    if (!sheet) {
+      throw new Error('Communications tab is not configured.');
+    }
+
+    var headers = sheet
+      .getRange(1, 1, 1, sheet.getLastColumn())
+      .getValues()[0]
+      .map(String);
+
+    TICVoice.headers.forEach(function(h) {
+      if (headers.indexOf(h) < 0) {
+        throw new Error('Missing Communications column: ' + h);
+      }
+    });
+
     var keyCol = headers.indexOf('CommunicationID') + 1;
-    var existing = new Set(sheet.getLastRow() > 1
-      ? sheet.getRange(2,keyCol,sheet.getLastRow()-1,1).getDisplayValues().map(function(r){return r[0];}) : []);
-    var people = ticVoicePeople_(book), pending = [], cutoff = Date.now() - 3*86400000;
-    var query = 'newer_than:3d {subject:"New missed call from" subject:"New voicemail from"}';
-    for (var start=0; pending.length < 100; start+=50) {
-      var threads = GmailApp.search(query,start,50);
-      if (!threads.length) break;
-      for (var t=0; t<threads.length && pending.length<100; t++) {
+
+    var existing = new Set(
+      sheet.getLastRow() > 1
+        ? sheet
+            .getRange(2, keyCol, sheet.getLastRow() - 1, 1)
+            .getDisplayValues()
+            .map(function(r) { return r[0]; })
+        : []
+    );
+
+    var pending = [];
+    var people = null;
+    var scanned = 0;
+    var batchSize = 50;
+    var maxThreads = 500;
+    var complete = false;
+
+    for (var start = 0; start < maxThreads; start += batchSize) {
+      var threads = GmailApp.search(query, start, batchSize);
+
+      if (!threads.length) {
+        complete = true;
+        break;
+      }
+
+      scanned += threads.length;
+
+      for (var t = 0; t < threads.length; t++) {
         var messages = threads[t].getMessages();
-        for (var i=0; i<messages.length && pending.length<100; i++) {
-          var msg=messages[i], key='voice_'+msg.getId();
-          if (existing.has(key) || msg.getDate().getTime()<cutoff) continue;
-          var record=TICVoice.parse(msg.getSubject(),msg.getPlainBody(),msg.getBody(),msg.getFrom());
+
+        for (var i = 0; i < messages.length; i++) {
+          var msg = messages[i];
+          var id = msg.getId();
+          var key = 'voice_' + id;
+
+          // Skip messages already recorded.
+          if (existing.has(key)) continue;
+
+          var at = msg.getDate();
+
+          // Skip messages outside the current search window.
+          if (at.getTime() < cutoff) continue;
+
+          // Reject irrelevant subjects before reading bodies.
+          var subject = msg.getSubject();
+
+          if (!/^New (voicemail|missed call) from /i.test(subject)) {
+            continue;
+          }
+
+          var sender = msg.getFrom();
+
+          if (!/@google\.com(?:>)?$/i.test(sender.trim())) {
+            continue;
+          }
+
+          // Read the message only after basic validation.
+          var plain = msg.getPlainBody();
+          var record = TICVoice.parse(subject, plain, '', sender);
+
           if (!record) continue;
-          var at=msg.getDate();
-          record.CommunicationID=key; record.SourceMessageID=msg.getId();
-          record.SourceTimestamp=at.getTime();
-          record.Date=Utilities.formatDate(at,'America/Chicago','M/d/yy');
-          record.Time=Utilities.formatDate(at,'America/Chicago','H:mm');
-          var reasons=TICVoice.matches(record,people);
-          record.MatchDetails=reasons.join('\n');
-          record.StaffNotes=record.MatchDetails;
-          record.ContactLog=''; record.Status=''; record.ClientRowID='';
+
+          // Only retrieve HTML when the plain-text version
+          // may be insufficient to classify a voicemail.
+          if (
+            /^New voicemail from /i.test(subject) &&
+            record.ContactType === 'Missed Call'
+          ) {
+            record = TICVoice.parse(
+              subject,
+              plain,
+              msg.getBody(),
+              sender
+            );
+          }
+
+          if (!record) continue;
+
+          // Load client history only when needed.
+          if (people === null) {
+            people = ticVoicePeople_(book);
+          }
+
+          record.CommunicationID = key;
+          record.SourceMessageID = id;
+          record.SourceTimestamp = at.getTime();
+
+          record.Date = Utilities.formatDate(
+            at, 'America/Chicago', 'M/d/yy'
+          );
+
+          record.Time = Utilities.formatDate(
+            at, 'America/Chicago', 'H:mm'
+          );
+
+          var reasons = TICVoice.matches(record, people);
+
+          record.MatchDetails = reasons.join('\n');
+          record.StaffNotes = record.MatchDetails;
+          record.ContactLog = '';
+          record.Status = '';
+          record.ClientRowID = '';
+
           pending.push(headers.map(function(h) {
-            var v=record[h] === undefined ? '' : record[h];
-            return typeof v === 'string' && /^[=+@-]/.test(v) ? "'"+v : v;
+            var v = record[h] === undefined ? '' : record[h];
+
+            return typeof v === 'string' && /^[=+@-]/.test(v)
+              ? "'" + v
+              : v;
           }));
+
           existing.add(key);
         }
       }
-      if (threads.length<50) break;
+
+      if (threads.length < batchSize) {
+        complete = true;
+        break;
+      }
     }
-    if (pending.length) sheet.getRange(sheet.getLastRow()+1,1,pending.length,headers.length).setValues(pending);
-    console.log('Communications import: created='+pending.length);
-    return {created:pending.length};
-  } finally { lock.releaseLock(); }
+
+    // Write all discovered communications.
+    if (pending.length) {
+      sheet
+        .getRange(
+          sheet.getLastRow() + 1,
+          1,
+          pending.length,
+          headers.length
+        )
+        .setValues(pending);
+    }
+
+    // Only advance the checkpoint after a complete scan.
+    // A partial scan is retried next time without losing records.
+    if (complete) {
+      props.setProperty(checkpointKey, String(now));
+    } else {
+      console.warn(
+        'Voice ingestion reached thread scan limit. ' +
+        'Checkpoint not advanced.'
+      );
+    }
+
+    console.log(
+      'Communications import: created=' + pending.length +
+      ', threads=' + scanned +
+      ', complete=' + complete
+    );
+
+    return {
+      created: pending.length,
+      threadsScanned: scanned,
+      complete: complete
+    };
+
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function ticVoicePeople_(book) {
@@ -126,7 +278,6 @@ function ticVoicePeople_(book) {
       people.push({first:get('FirstName'),middle:get('MiddleName'),last:get('LastName'),phones:phones,source:'Clients',row:i+2});
     });
   }
-  // Reuse the authorized history reader: Graveyard H and Completed Call Log C:S.
   if (typeof ticHistory_ === 'function') {
     var history=ticHistory_();
     history.people.forEach(function(p){
@@ -149,4 +300,3 @@ function testTICVoiceParser() {
   console.log('TICVoice parser: 5 checks passed; no email or spreadsheet writes.');
   return true;
 }
-if (typeof module !== 'undefined') module.exports=TICVoice;

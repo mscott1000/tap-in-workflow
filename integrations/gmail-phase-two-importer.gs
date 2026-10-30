@@ -1,4 +1,4 @@
-// Install in a SEPARATE Apps Script project owned by the intake mailbox account.
+// Must live in a SEPARATE Apps Script project owned by the intake mailbox account.
 // Runs alongside google-intake-form-auto-add without changing its code or trigger.
 const CONFIG = {
   SHEET_ID: '1Yhol_3USiPmUNNhz6Mmyou2ArJ93WAlCdEKzNfi5TD8',

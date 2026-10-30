@@ -84,12 +84,12 @@ var TICIdentity = (function () {
       var sameName = sameAlias(first, oldFirst) && sameAlias(last, oldLast);
       var sameDob = !!birth && birth === oldBirth;
       var reasons = [];
-      if (sameName && sameDob) reasons.push('same first/last name and DOB');
-      else if (sameName) reasons.push(oldBirth ? 'same first/last name; DOB differs' : 'same first/last name; historical DOB unavailable');
+      if (sameName && sameDob) reasons.push('First + Last; DOB');
+      else if (sameName) reasons.push(oldBirth ? 'First + Last; DOB differs' : 'First + Last; prior DOB not found');
       else if (sameDob && closeAlias(first, oldFirst) && closeAlias(last, oldLast)) {
-        reasons.push('similar first/last name and same DOB');
+        reasons.push('Similar First + Last; Same DOB');
       }
-      if (samePhone) reasons.push('same phone number' + (sameDob ? ' and DOB' : ''));
+      if (samePhone) reasons.push('Phone Number' + (sameDob ? ' and DOB' : ''));
       return reasons.length ? {
         sourceRef: row.sourceRef, sourceTab: row.sourceTab, sourceRow: row.sourceRow,
         sourceToken: row.sourceToken, reasons: reasons, clientId: row.clientId || ''
@@ -123,8 +123,8 @@ var TICIdentity = (function () {
       return {
         sourceRef: row.sourceRef, sourceTab: row.sourceTab, sourceRow: row.sourceRow,
         sourceToken: row.sourceToken,
-        reason: row.sourceTab === 'Cases' ? 'same case number in another AppSheet Case row; verify court and identity' :
-          'same complete case number in TIC Graveyard column F (previously submitted)',
+        reason: row.sourceTab === 'Cases' ? 'Same case number in another AppSheet Case row; verify court and Client' :
+          'Case Number found in TIC Graveyard',
         submissionStatus: row.sourceTab === 'Cases' ? 'Duplicate AppSheet Entry' : 'Previously submitted'
       };
     });
@@ -132,7 +132,7 @@ var TICIdentity = (function () {
 
   function clientStatus(matches) {
     if (matches.some(function (m) { return m.Decision === 'Confirmed'; })) return 'Repeat Client Confirmed';
-    if (matches.some(function (m) { return m.Decision !== 'Dismissed'; })) return 'Match Found - Awaiting Confirmation';
+    if (matches.some(function (m) { return m.Decision !== 'Dismissed'; })) return 'Match - Awaiting Confirmation';
     return 'No Client Match';
   }
 

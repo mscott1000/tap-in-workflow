@@ -23,7 +23,7 @@ for (const [source, target] of expected) {
   assert.ok(file.state);
   await access(resolve(root, file.source));
 }
-assert.equal(installation.files.find(f => f.editorFile === 'eligible-cases-install').state, 'blocked-known-generator-gaps');
+assert.equal(installation.files.find(f => f.editorFile === 'eligible-cases-install').state, 'tested-ready-user-installation');
 for (const path of ['.github/workflows/apps-script-release.yml', 'scripts/apps-script-release.mjs', 'config/deployment-targets.json'])
   await assert.rejects(access(resolve(root, path)), { code: 'ENOENT' });
 const pkg = JSON.parse(await read('package.json'));

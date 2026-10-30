@@ -10,6 +10,8 @@ const rows = [headers];
 let messages = [];
 let searches = [];
 let lockReleased = 0;
+const properties = new Map();
+let failWrite = false;
 const sheet = {
   getLastColumn: () => headers.length,
   getLastRow: () => rows.length,
@@ -17,6 +19,7 @@ const sheet = {
     getValues: () => rows.slice(r-1,r-1+h).map(row => row.slice(c-1,c-1+w)),
     getDisplayValues: () => rows.slice(r-1,r-1+h).map(row => row.slice(c-1,c-1+w).map(String)),
     setValues: values => {
+      if (failWrite) throw new Error('Synthetic write failure');
       assert.equal(c,1);
       assert.equal(r,rows.length+1);
       values.forEach(v => rows.push(v));
@@ -32,6 +35,7 @@ const clientSheet = {
   getDataRange: () => ({getDisplayValues: () => clients.map(r => [...r])})
 };
 const ctx = vm.createContext({
+  PropertiesService:{getScriptProperties:()=>({getProperty:key=>properties.get(key)||null,setProperty:(key,value)=>properties.set(key,value)})},
   console, Date, Set, Array, CONFIG:{SHEET_ID:'synthetic-workbook'},
   LockService:{getScriptLock:()=>({tryLock:()=>true,releaseLock:()=>{lockReleased++;}})},
   SpreadsheetApp:{openById:id=>{
@@ -39,7 +43,10 @@ const ctx = vm.createContext({
     return {getSheetByName:name=>({Communications:sheet,Clients:clientSheet})[name]};
   }},
   GmailApp:{search:(query,start,count)=>{
-    assert.match(query,/newer_than:3d/);
+    assert.match(query,/^after:\d+ /);
+    const cutoff = Number(query.match(/^after:(\d+)/)[1]) * 1000;
+    const expected = properties.has('TIC_VOICE_LAST_SUCCESS') ? Number(properties.get('TIC_VOICE_LAST_SUCCESS')) - 6*3600000 : Date.now()-3*86400000;
+    assert(Math.abs(cutoff-expected)<2000);
     assert.doesNotMatch(query,/is:unread|markRead|label:/i);
     searches.push(start);
     return messages.slice(start,start+count).map(m=>({getMessages:()=>[m]}));
@@ -103,4 +110,33 @@ assert.equal(ctx.runTICVoiceIngest().created,51);
 assert.ok(searches.includes(50));
 assert.equal(ctx.runTICVoiceIngest().created,0);
 assert.equal(rows.length,54);
+
+// Complete scans advance the checkpoint; a capped scan and a failed write cannot.
+const checkpoint = properties.get('TIC_VOICE_LAST_SUCCESS');
+messages=Array.from({length:501},(_,i)=>message('cap-'+i,'New missed call from (314) 555-0101.',''));
+let batch=ctx.runTICVoiceIngest();
+assert.equal(batch.complete,false);
+assert.equal(batch.created,500);
+assert.equal(properties.get('TIC_VOICE_LAST_SUCCESS'),checkpoint);
+// Preserve the uploaded 500-thread cap honestly: a retry of the same full window
+// still reports incomplete. This does not prove progress beyond the scan limit.
+assert.equal(ctx.runTICVoiceIngest().created,0);
+assert.equal(properties.get('TIC_VOICE_LAST_SUCCESS'),checkpoint);
+messages=[];
+const beforeFailure=properties.get('TIC_VOICE_LAST_SUCCESS');
+messages=[message('write-failure','New missed call from Avery Morgan.','')];
+failWrite=true;
+assert.throws(()=>ctx.runTICVoiceIngest(),/Synthetic write failure/);
+assert.equal(properties.get('TIC_VOICE_LAST_SUCCESS'),beforeFailure);
+failWrite=false;
+assert.equal(ctx.runTICVoiceIngest().created,1);
+assert.equal(ctx.runTICVoiceIngest().created,0);
+// HTML body fallback is read only when plain voicemail classification is insufficient.
+let htmlReads=0;
+const htmlMessage=message('html-only','New voicemail from Avery Morgan.','');
+htmlMessage.getBody=()=>{htmlReads++;return '<p>Google Voice '+Array(11).fill('word').join(' ')+' play message</p>';};
+messages=[htmlMessage];
+assert.equal(ctx.runTICVoiceIngest().created,1);
+assert.equal(mapped(rows.at(-1)).ContactType,'Voicemail');
+assert.equal(htmlReads,1);
 console.log('PASS: synthetic classification, sender, phone/name, source advice, dates, 3-day filter, pagination, dedup, blank status and no Gmail writes');

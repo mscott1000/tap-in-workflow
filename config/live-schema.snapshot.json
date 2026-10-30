@@ -128,13 +128,23 @@
     }
   },
   "knownConflicts": [
-    "Source Cases.CasePhase validation still uses numbered phase names.",
-    "Generator raw ChargeClass values may be rejected by AppSheet."
+    "Sheet ChargeClass allows Unclassified but last observed AppSheet Enum does not; generator leaves unsupported classes blank and adds a warning."
   ],
-  "headerReadbackVerifiedOn": "2026-10-29",
+  "headerReadbackVerifiedOn": "2026-10-30",
   "headerReadbackRanges": {
     "Clients": "A1:AM1",
-    "Cases": "A1:AJ1",
-    "Communications": "A1:O1"
+    "Cases": "A1:AJ1"
+  },
+  "casePhaseValidationRepair": {
+    "verifiedOn": "2026-10-30",
+    "range": "Cases!K2:K979",
+    "allowedValues": [
+      "Intake",
+      "Research",
+      "Request",
+      "Follow Up",
+      "Graveyard"
+    ],
+    "recordValuesChanged": false
   }
 }

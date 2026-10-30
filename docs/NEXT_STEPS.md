@@ -1,22 +1,13 @@
 # Remaining steps
 
-## Environment setup
+The environment is running and repository checks pass. Do not repeat environment creation.
 
-Create and publish **Tap In** following USER_SETUP.md. Repository preparation is complete; publication is a user action and has not been verified.
-No Apps Script installation, Google deployment credentials, or Sheet changes are required to create the environment.
-Verify Google Drive access in a new task; connection availability is separate from GitHub.
+The approved code work and Sheet CASEPHASE validation repair are complete as of 2026-10-30. Follow [the exact installation and AppSheet handoff](GENERATOR_HANDOFF_2026-10-30.md).
 
-## Existing app work — not completed by environment setup
+1. In **AppSheet Intake**, replace only **history-match-core** and **history-match-adapter**, then add the combined **eligible-cases-install** file. The four uploaded scripts are preserved in the dated source snapshot; do not ask for them again. Compare any edits made since those uploads before replacement. Leave Tap In Workflow and all existing triggers untouched.
+2. In AppSheet, bind the timestamp-change generator bot to **AppSheet Intake → createEligibleCasesForClient([ClientRowID])** and save. Complete any actual Google runtime consent in your browser.
+3. Configure the parent-prefilled **Add Case** action/form, generation warnings, current-input Repeat Case Check/evidence display, and the manual-Case history event from the complete expressions in the handoff.
+4. Inspect the existing **Request** and **Graveyard** views and use their Client-row slices without resetting custom layouts. Current editor settings have not been verified.
+5. Identify an explicitly fictional Client fixture and perform the generation/repeat-run checks in the handoff. No live generation or deduplication test has occurred; no operational record is authorized as a fixture.
 
-1. Finish the case generator's CHARGECLASS mapping, court names, history-check integration, and manual Add Case fallback in repository code.
-2. Apply any approved source-Sheet corrections directly through connected tools. Inspect current values first; no schema reset.
-3. Supply only the changed complete script files ready for user copy/paste, after confirming newer live edits are not lost.
-4. Prepare exact AppSheet steps to save the generator bot and verify Client-row presentation in Request and Graveyard without resetting layouts.
-5. Use an explicitly agreed test fixture for live checks and deduplication. Do not run against operational records as a setup test.
-
-These are future app-change tasks, not instructions to install all existing candidate code now.
-After each task, replace this list with only the actual remaining user steps and unresolved work.
-
-## Script uploads received 2026-10-30
-
-Four user-supplied AppSheet Intake scripts are permanently preserved, byte-for-byte, in [the dated source snapshot](../integrations/source-snapshots/2026-10-30/README.md), with exact editor names, maintained-file mappings, and SHA-256 hashes in manifest.json. Consult these before asking the user for scripts again. They include newer/different history wording, GMT date reads, and checkpoint-based Voice ingestion. Maintained files have not yet been reconciled. User identifies the uploads as connected Google Drive scripts; current installed Apps Script equality remains unverified. No generator was supplied. Next source-reconciliation work must compare these snapshots with maintained code and review AppSheet status compatibility and date handling. No installation or live data changes occurred.
+Codex completed and read back the validation change at `Cases!K2:K979`; there is no remaining user Sheet repair for that range. No record values changed. Script installation and AppSheet saves remain user-only steps under AGENTS.md rules 9–10.

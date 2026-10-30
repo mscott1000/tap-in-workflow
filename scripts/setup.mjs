@@ -11,4 +11,4 @@ for (const file of ['scripts/run-tests.mjs', 'scripts/check-project.mjs']) {
   if (result.error || result.status !== 0) process.exit(1);
 }
 console.log('READY: repository tests passed. No installation, Google login, network request, or live change was performed.');
-console.log('Next: read docs/USER_SETUP.md; verify connected Google Drive access separately in the new task.');
+console.log('Next: read docs/CURRENT_PROJECT.md and docs/NEXT_STEPS.md; verify connected Google Drive access in each new task.');

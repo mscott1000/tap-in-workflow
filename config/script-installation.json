@@ -2,41 +2,46 @@
   "schemaVersion": 1,
   "mode": "user-copy-paste",
   "automatedPublishing": false,
-  "note": "Source of truth for maintained code; not proof of current installed equality. Copy only changed files approved as ready by a task.",
+  "note": "Prepared source and user-upload baseline are recorded separately. Install only the three changed generator/history files in the dated handoff; uploaded intake and voice files need no replacement.",
   "files": [
     {
       "source": "integrations/gmail-phase-two-importer.gs",
       "project": "appsheet-intake",
       "editorFile": "appsheet-intake-forms",
-      "state": "reconcile-before-replacement"
+      "state": "reconciled-user-upload",
+      "sourceEvidence": "integrations/source-snapshots/2026-10-30/manifest.json"
     },
     {
       "source": "integrations/identity-review-core.js",
       "project": "appsheet-intake",
       "editorFile": "history-match-core",
-      "state": "reconcile-before-replacement"
+      "state": "tested-ready-user-installation",
+      "sourceEvidence": "integrations/source-snapshots/2026-10-30/manifest.json"
     },
     {
       "source": "integrations/identity-review-adapter.gs",
       "project": "appsheet-intake",
       "editorFile": "history-match-adapter",
-      "state": "reconcile-before-replacement"
+      "state": "tested-ready-user-installation",
+      "sourceEvidence": "integrations/source-snapshots/2026-10-30/manifest.json"
     },
     {
       "source": "integrations/voice-communications.gs",
       "project": "appsheet-intake",
       "editorFile": "voice-communications",
-      "state": "candidate-review-required"
+      "state": "reconciled-user-upload",
+      "sourceEvidence": "integrations/source-snapshots/2026-10-30/manifest.json"
     },
     {
       "source": "integrations/eligible-cases-install.gs",
       "project": "appsheet-intake",
       "editorFile": "eligible-cases-install",
-      "state": "blocked-known-generator-gaps",
+      "state": "tested-ready-user-installation",
       "components": [
         "integrations/eligible-cases-core.js",
         "integrations/eligible-cases-adapter.gs"
-      ]
+      ],
+      "sourceEvidence": "Repository generator revised 2026-10-30; add to AppSheet Intake, preserve legacy project"
     }
   ]
 }

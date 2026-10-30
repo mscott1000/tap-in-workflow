@@ -134,7 +134,7 @@ function ticRunChecks_(options) {
         !valid ? 'Missing or unsupported case number. Check this case manually; no clean result was issued.' :
         found.length ? found.map(function (m) {
           return m.sourceTab + ' row ' + m.sourceRow + ': ' + m.reason;
-        }).join('\n') : 'No matching complete case number in TIC Graveyard F or another AppSheet Case row.';
+        }).join('\n') : 'No match found';
       ticSummary_(caseStore, String(row.CaseID), signature, status, details);
       counts.cases++;
     });
@@ -152,7 +152,7 @@ function ticHistory_() {
   var source = SpreadsheetApp.openById(TIC_REVIEW.sourceId);
   var graveyard = source.getSheetByName(TIC_REVIEW.graveyard);
   var calls = source.getSheetByName(TIC_REVIEW.callLog);
-  if (!graveyard || !calls) throw new Error('Historical source tab missing.');
+  if (!graveyard || !calls) throw new Error('Link to TIC Graveyard failed');
   var heads = graveyard.getRange(1,1,1,8).getDisplayValues()[0];
   if (heads[1] !== 'First Name' || heads[2] !== 'Last Name' || heads[4] !== 'DOB' ||
       heads[5] !== 'Eligible Cases' || heads[7] !== 'Phone Number') {
