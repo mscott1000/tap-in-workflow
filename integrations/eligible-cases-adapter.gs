@@ -21,20 +21,28 @@ function createEligibleCasesForClient(clientRowId) {
       return n;
     }
     ['ClientRowID', 'ClientID', 'EligibleCases', 'EligibleNotes'].forEach(function (n) { index(ch, n); });
-    ['CaseID', 'ClientRowID', 'CaseNumber', 'CaseStatus', 'CasePhase', 'ResearchNotes'].forEach(function (n) { index(kh, n); });
+    ['CaseID', 'ClientID', 'ClientRowID', 'Jurisdiction', 'CaseNumber', 'CaseStatus', 'CasePhase', 'ResearchNotes',
+      'NumberOfCounts', 'AttorneyName', 'ChargeText', 'WarrantIssueDate', 'ChargeType', 'ChargeClass',
+      'BondAmount', 'CaseLink'].forEach(function (n) { index(kh, n); });
     var rows = clients.getLastRow() > 1 ? clients.getRange(2, 1, clients.getLastRow() - 1, ch.length).getDisplayValues() : [];
     var matches = rows.filter(function (r) { return r[index(ch, 'ClientRowID')] === String(clientRowId); });
     if (matches.length !== 1) throw new Error('Expected one matching Clients row, found ' + matches.length);
     var client = matches[0];
     var parsed = TICEligibleCases.parse(client[index(ch, 'EligibleCases')], client[index(ch, 'EligibleNotes')]);
-    if (parsed.fallback) return { fallback: true, created: [], skipped: [] };
+    if (parsed.fallback) return { fallback: true, manualCaseRequired: true,
+      message: 'No supported case number found. Open Add Case on this Client row; no row was created.', created: [], skipped: [] };
+    // Fail before any append if this project lacks its advisory dependency.
+    if (typeof checkCaseHistory !== 'function') throw new Error('Install alongside history-match-core and history-match-adapter in AppSheet Intake before generating Cases.');
     var oldRows = cases.getLastRow() > 1 ? cases.getRange(2, 1, cases.getLastRow() - 1, kh.length).getDisplayValues() : [];
     parsed.cases.forEach(function (item) {
       var existing = oldRows.some(function (r) {
         return r[index(kh, 'ClientRowID')] === String(clientRowId) &&
           r[index(kh, 'CaseNumber')].replace(/\s+/g, '') === item.CaseNumber;
       });
-      if (existing) { skipped.push(item.CaseNumber + ': already linked to this Client row'); return; }
+      if (existing) {
+        skipped.push(item.CaseNumber + ': already linked to this Client row');
+        return;
+      }
       var out = Array(kh.length).fill('');
       var id = Utilities.getUuid().replace(/-/g, '').slice(0, 16);
       var values = {
@@ -49,7 +57,7 @@ function createEligibleCasesForClient(clientRowId) {
       };
       Object.keys(values).forEach(function (name) {
         var at = kh.indexOf(name);
-        if (at >= 0) out[at] = values[name];
+        if (at >= 0) out[at] = typeof values[name] === 'string' && /^[=+@-]/.test(values[name]) ? "'" + values[name] : values[name];
       });
       cases.appendRow(out);
       oldRows.push(out);
@@ -58,14 +66,17 @@ function createEligibleCasesForClient(clientRowId) {
     SpreadsheetApp.flush();
   } finally { lock.releaseLock(); }
   // Sheet writes do not fire an AppSheet add-row bot. Trigger the existing
-  // advisory case-number check explicitly, once per new CaseID.
-  created.forEach(function (entry) {
-    if (typeof checkCaseHistory !== 'function') {
-      entry.checkError = 'checkCaseHistory is unavailable; repeat-case result remains Pending';
-      return;
+  // advisory case-number check explicitly after the shared lock is released.
+  // One existing history call refreshes all Cases, including retry-skipped rows.
+  // A failed check rejects the bot task so a retry can finish without duplicates.
+  if (created.length || skipped.length) {
+    try { var historyResult = checkCaseHistory(created.length ? created[0].CaseID : oldRows.filter(function (r) {
+      return r[index(kh, 'ClientRowID')] === String(clientRowId) &&
+        parsed.cases.some(function (item) { return r[index(kh, 'CaseNumber')].replace(/\s+/g, '') === item.CaseNumber; });
+    })[0][index(kh, 'CaseID')]);
+      if (historyResult && historyResult.sourceError) throw new Error('Historical source is unreadable; case checks report Error.');
     }
-    try { checkCaseHistory(entry.CaseID); }
-    catch (e) { entry.checkError = String(e); }
-  });
+    catch (e) { throw new Error('Cases saved; advisory history refresh failed. Retry Generate Cases; existing rows will be skipped. ' + String(e)); }
+  }
   return { fallback: false, created: created, skipped: skipped };
 }

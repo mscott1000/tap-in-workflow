@@ -32,11 +32,12 @@
       "source": "integrations/eligible-cases-install.gs",
       "project": "appsheet-intake",
       "editorFile": "eligible-cases-install",
-      "state": "blocked-known-generator-gaps",
+      "state": "tested-ready-user-installation",
       "components": [
         "integrations/eligible-cases-core.js",
         "integrations/eligible-cases-adapter.gs"
-      ]
+      ],
+      "note": "Generator-only repair. Add this combined file to AppSheet Intake alongside the existing unchanged history functions. Do not replace other working files."
     }
   ]
 }

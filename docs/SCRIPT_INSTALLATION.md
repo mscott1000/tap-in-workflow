@@ -1,3 +1,5 @@
+> **Generator-only update:** See [GENERATOR_INSTALLATION.md](GENERATOR_INSTALLATION.md). Only eligible-cases-install is prepared for addition in AppSheet Intake. Do not replace other working files from this handoff.
+
 # Script source and user installation
 
 GitHub is the source of truth for maintained code. Copy only the approved changed files from the exact commit linked in the task handoff.
@@ -14,7 +16,7 @@ The machine-readable map is ../config/script-installation.json.
 | integrations/identity-review-core.js | AppSheet Intake | history-match-core | Maintained copy; live equality needs confirmation |
 | integrations/identity-review-adapter.gs | AppSheet Intake | history-match-adapter | Maintained copy; live equality needs confirmation |
 | integrations/voice-communications.gs | AppSheet Intake | voice-communications | Candidate; reconcile before replacement |
-| integrations/eligible-cases-install.gs | AppSheet Intake | eligible-cases-install | Candidate; known generator gaps; do not install yet |
+| integrations/eligible-cases-install.gs | AppSheet Intake | eligible-cases-install | Tested generator-only update; follow GENERATOR_INSTALLATION.md |
 
 AppSheet Intake: https://script.google.com/home/projects/12e-XiMzRPQvbJEZ9Xr24wwnvOPoKcqgO8hyRPCi45iiCoZyfnRvmJYkz/edit
 

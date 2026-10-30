@@ -27,7 +27,7 @@ Merging this repository never installs scripts or changes AppSheet settings.
 
 ## Verification and preservation
 
-Node 22 or later is sufficient. Codex runs `npm run setup`; it runs five synthetic suites and source/configuration checks, without installing packages or contacting Google.
+Node 22 or later is sufficient. Codex runs `npm run setup`; it runs seven synthetic suites and source/configuration checks, without installing packages or contacting Google.
 GitHub Actions runs the same checks for pull requests and main.
 
 The live sheet may contain operational personal/legal information. Keep records and credentials out of GitHub.
