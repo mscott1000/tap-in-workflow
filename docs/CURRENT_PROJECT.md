@@ -93,3 +93,7 @@ The environment itself must still be created and published by the user through U
 No live scripts installed/run, AppSheet saves, trigger changes, or Sheet data edits were performed for environment preparation.
 
 Verification for this revision: npm run setup passed all five synthetic suites and source/configuration checks. Live Sheet verification was limited to metadata and the three header rows above. No runtime or AppSheet verification is claimed.
+
+## GitHub auto-merge installation — 2026-10-30
+
+User authorized the repository auto-merge workflow. See [AUTO_MERGE.md](AUTO_MERGE.md). GitHub currently enables auto-merge/squash and main requires synthetic-checks. Workflow and policy tests are prepared; live installation verification will be recorded after the bootstrap PR passes and merges. No external app or Sheet records changed.

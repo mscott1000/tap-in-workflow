@@ -1,0 +1,64 @@
+name: Enroll project PRs in auto-merge
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, ready_for_review, synchronize, edited]
+  workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
+
+permissions: {}
+
+jobs:
+  enable-auto-merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # Intentionally no checkout: this privileged job handles metadata only.
+      - name: Enroll ready same-repository PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Fail closed if the required test check is removed from main.
+          protected=$(gh api "repos/$GH_REPO/branches/main" --jq \
+            '(.protected == true) and ((.protection.required_status_checks.contexts // []) | index("synthetic-checks") != null)')
+          if [[ "$protected" != true ]]; then
+            echo 'main must require synthetic-checks before automatic merging.' >&2
+            exit 1
+          fi
+
+          candidates="$RUNNER_TEMP/auto-merge-candidates.tsv"
+          if [[ -n "$PR_NUMBER" ]]; then
+            [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]
+            printf '%s\n' "$PR_NUMBER" > "$candidates"
+          else
+            gh api --paginate "repos/$GH_REPO/pulls?state=open&base=main&per_page=100" \
+              --jq '.[].number' > "$candidates"
+          fi
+
+          failed=0
+          while IFS= read -r number; do
+            [[ -n "$number" ]] || continue
+            # Re-read current metadata; the original event may be stale.
+            if ! head=$(gh api "repos/$GH_REPO/pulls/$number" --jq \
+              'select(.state == "open" and .draft == false and .base.ref == "main" and .head.repo.full_name == .base.repo.full_name and .auto_merge == null) | .head.sha'); then
+              echo "Could not inspect PR #$number" >&2
+              failed=1
+              continue
+            fi
+            [[ -n "$head" ]] || continue
+            if ! gh pr merge "$number" --auto --squash --match-head-commit "$head"; then
+              echo "Could not enable auto-merge for PR #$number; inspect its merge requirements." >&2
+              failed=1
+            fi
+          done < "$candidates"
+          exit "$failed"

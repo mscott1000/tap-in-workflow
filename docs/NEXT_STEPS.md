@@ -16,3 +16,7 @@ Verify Google Drive access in a new task; connection availability is separate fr
 
 These are future app-change tasks, not instructions to install all existing candidate code now.
 After each task, replace this list with only the actual remaining user steps and unresolved work.
+
+## GitHub auto-merge installation — 2026-10-30
+
+User authorized the repository auto-merge workflow. See [AUTO_MERGE.md](AUTO_MERGE.md). GitHub currently enables auto-merge/squash and main requires synthetic-checks. Workflow and policy tests are prepared; live installation verification will be recorded after the bootstrap PR passes and merges. No external app or Sheet records changed.
