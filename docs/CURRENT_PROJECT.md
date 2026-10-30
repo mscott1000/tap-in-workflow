@@ -6,7 +6,7 @@ Updated: 2026-10-29, America/Chicago. Recheck dated observations before new writ
 
 Improve the existing AppSheet app and sheet. Preserve Jotform, staff layouts, archives, record links, and ownership.
 The latest explicit user request controls. This record separates desired behavior from verified state. Older docs are historical.
-GitHub becomes the code-release authority only after reconciliation with live source. Until then, publication is blocked.
+GitHub is the source of truth for maintained script code. Existing copies still need comparison with any newer live edits before replacement. Code is installed by user copy/paste, never automated publishing.
 
 ## Terms and current directions
 
@@ -28,7 +28,7 @@ GitHub becomes the code-release authority only after reconciliation with live so
 Exact IDs: ../config/project-registry.json. Physical headers: ../config/live-schema.snapshot.json.
 The working sheet **Tap In Center — AppSheet System** may contain operational personal/legal data. It is not a fictional test database.
 Historical workbook **Intake 2026** stays read-only. Relevant submitted cases: **TIC Graveyard**, F only. Phone sources: H there and C:S in **Completed Call Log**, including row 1.
-Keep mailbox operation under the Tap In account. Never recreate its scheduled importer under a personal account during deployment.
+Keep mailbox operation under the Tap In account. Never recreate its scheduled importer under a personal account when copying code.
 
 ## Last observed live state: 2026-10-29
 
@@ -42,33 +42,54 @@ Keep mailbox operation under the Tap In account. Never recreate its scheduled im
 | CHARGECLASS | AppSheet Enum A, B, C, D, E, O; other values disabled | Generator returns raw class text; resolve mapping |
 | Source CASEPHASE validation | Numbered names remain while routing map uses phase titles | Narrow repair after inspection; no schema reset |
 | Graveyard | Earlier view observation: Phase5_Cases; Phase5_Clients already has Client-or-child-case filter | User wants Client rows; recheck current view |
-| Consent | Email sharing approved; broad Gmail/Sheets/background consent not completed | Runtime and deployment auth unverified |
+| Consent | Email sharing approved; broad Gmail/Sheets/background consent not completed | User handles any required runtime consent; no deployment credential setup |
 
 ## Candidate code and tests
 
 This setup preserves available workspace copies of the communication importer and case parser/adapter/tests. They are **reconciliation candidates**, not newly deployed code.
 The combined generator has the structure inspected in Tap In Workflow; byte-for-byte equality to current live source is not claimed.
 Known generator gaps: CHARGECLASS mapping, court-name normalization, missing co-located history checker, and fallback that cannot navigate the staff browser to a manual form.
-Adding release tooling does not repair these functional defects.
+Preparing the Codex environment does not repair these functional defects.
 Synthetic tests prove behavior under mocks, not live permissions, scheduled execution, valid AppSheet rows, or end-to-end operation.
 
-## Release state
+## Standard editing workflow
 
-Publication is disabled in ../config/deployment-targets.json. No verified live baseline or deployment credential is configured.
-Manual workflow: plan is offline; inspect is read-only and requires user-configured auth; apply requires enabled/reconciled target, matching live baseline, and exact approved bundle.
-Publishing never runs importers, creates Cases, changes triggers, edits AppSheet settings, or submits records.
+The user's latest instruction replaces the automated publisher setup:
 
-## Remaining work
+1. Read context, inspect relevant live Sheet ranges, and propose the specific change once.
+2. After approval, complete every relevant edit supported by connected Google Drive/Sheets. Read back results; do not hand those edits back to the user.
+3. Maintain/test complete changed Apps Script files in this repository as the source of truth.
+4. Leave only user-completed Apps Script copy/paste and AppSheet editor steps, with exact file links, expressions, buttons, and checks.
+5. Report completed, prepared, installed, and live-verified separately.
 
-1. User completes USER_SETUP.md: auth, secure credentials, full live-source reconciliation, and saved cloud environment. No login step is part of this setup task.
-2. Resolve generator mappings, history integration, manual Add Case fallback, and specific field warnings/repeat-check display. No draft-row type.
-3. Save the AppSheet timestamp-change bot passing CLIENTROWID to the correct function.
-4. Verify Client-row presentation in Request/Graveyard without resetting custom columns.
-5. Run an explicitly approved synthetic live test and repeat it to prove deduplication. Do not test on operational records.
+No automated logins, custom OAuth setup, Google deployment secrets, or automated script publishing.
+Code installation is a user action. No operational scripts are run as repository setup tests.
+Task approval covers the stated change, not unrelated cleanup, data deletion, or layout resets.
 
-## Repository-control setup
+## Connected access checked in this setup: 2026-10-29
 
-Prepared: current context, resource registry, preserved candidate code/tests, credential-free CI, guarded manual release tooling, and user setup checklist.
-Deliberately deferred: login, new permissions, live deployment, app saves, trigger changes, database writes, and published cloud-environment configuration.
+Connected Google Drive successfully read the working spreadsheet's tab metadata and exact headers:
+Clients A1:AM1 (39 headers), Cases A1:AJ1 (35 populated headers), Communications A1:O1 (15 headers).
+These matched the stored snapshot. No client records were read, and no live cells were written.
+This proves read access in this chat, not write access or availability of the connection in every future Codex task.
+At task start, check tool availability and exact-file access. If absent, finish repository work and name the missing connection; no token workaround.
 
-Local verification: all five synthetic suites passed; project/source checks passed; both workflow YAML files parsed; offline plan made no Google request; an apply attempt was refused by the disabled-publication gate. These are not live-runtime verification results.
+## Remaining app work
+
+1. Resolve generator mappings, history integration, manual Add Case fallback, and field warnings/repeat-check display. No draft-row type.
+2. Perform approved source-Sheet repairs through connected tools after re-reading current values.
+3. Give the user ready changed script files with exact copy destinations; do not install unresolved candidates.
+4. Give exact AppSheet steps to save the timestamp-change bot passing CLIENTROWID to the correct function.
+5. Verify Client-row presentation in Request/Graveyard without resetting custom columns.
+6. Run only an explicitly agreed live test, then repeat it to prove deduplication. No operational records as fixtures.
+
+## Environment preparation
+
+Prepared: repository rules, direct-Sheet editing requirement, user-copy/paste source map, browser-first Codex setup, handoff template, and remaining-user-step checklist.
+Removed: automated Apps Script publishing workflow, token-based publishing code/configuration, and its obsolete tests. Prior Git commits retain that history.
+Preserved: all integration source/tests, historical terminology, custom layouts, script projects, triggers, archive, and live records.
+The new fifth test suite checks the copy map, offline setup, and absence of the removed publisher.
+The environment itself must still be created and published by the user through USER_SETUP.md; this repository commit does not do that.
+No live scripts installed/run, AppSheet saves, trigger changes, or Sheet data edits were performed for environment preparation.
+
+Verification for this revision: npm run setup passed all five synthetic suites and source/configuration checks. Live Sheet verification was limited to metadata and the three header rows above. No runtime or AppSheet verification is claimed.

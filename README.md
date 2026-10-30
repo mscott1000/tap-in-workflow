@@ -1,26 +1,35 @@
 # Tap In Center workflow
 
-Start with [AGENTS.md](AGENTS.md) and [Current project](docs/CURRENT_PROJECT.md).
-
 This private repository supports the existing AppSheet app and Google Sheets. It is not a replacement app.
 
-- [Current project and outstanding work](docs/CURRENT_PROJECT.md)
-- [Resource registry](config/project-registry.json)
-- [Last observed sheet headers](config/live-schema.snapshot.json)
-- [One-proposal process](docs/CHANGE_PROCESS.md)
-- [User-completed setup](docs/USER_SETUP.md)
-- [Integration code and tests](integrations/README.md)
+**Standard workflow:** inspect → one proposal/approval → complete supported Sheet edits and tested repository code → user finishes Apps Script/AppSheet editor steps.
 
-## Active versus deferred
+- [Create the Codex environment](docs/USER_SETUP.md)
+- [Current project and decisions](docs/CURRENT_PROJECT.md)
+- [Working rules](AGENTS.md) and [change process](docs/CHANGE_PROCESS.md)
+- [Exact resources](config/project-registry.json) and [dated sheet headers](config/live-schema.snapshot.json)
+- [Script files and copy destinations](docs/SCRIPT_INSTALLATION.md)
+- [Remaining user steps](docs/NEXT_STEPS.md)
+- [Change handoff template](docs/CHANGE_HANDOFF_TEMPLATE.md)
 
-Repository tests use synthetic data and mocked Google services. Live publishing is disabled. The manual release workflow defaults to an offline plan and contains no credentials.
-Merging this repository does not update the live app, run importers, or create Client or Case rows.
-Authentication, secure credentials, live-source reconciliation, and the saved cloud environment are user-completed steps in USER_SETUP.md.
-AppSheet views, column settings, actions, and bots still require its editor; the repository does not publish those settings through an API.
+## Who does what
 
-## Preservation and privacy
+| Area | Codex | User |
+| --- | --- | --- |
+| Google Sheets | Inspect and complete approved edits through the connected Google Drive tools; read back results | Reconnect/share only if actual file access is missing |
+| Apps Script | Maintain/test complete code here and provide exact file replacements | Copy the approved changed files into the named project, save, and complete any runtime consent |
+| AppSheet | Prepare exact expressions and editor steps | Sign in, apply the listed settings, save, and perform the named checks |
 
-The live sheet may contain operational personal/legal information. It is not a fictional test database.
-Do not commit client records, messages, transcripts, credentials, or unreviewed app-documentation exports.
-Preserve Jotform, archives, custom layouts, and ownership. No routine schema regeneration or physical renaming.
-Older docs are historical evidence, not current installation instructions.
+A repository connection does not automatically supply Google Drive tools. Verify that connection in a fresh environment task; no custom Google deployment connection is needed.
+
+The automated Apps Script publisher and its token setup have been removed. No Google secrets, desktop software, or terminal work is required from the user.
+Merging this repository never installs scripts or changes AppSheet settings.
+
+## Verification and preservation
+
+Node 22 or later is sufficient. Codex runs `npm run setup`; it runs five synthetic suites and source/configuration checks, without installing packages or contacting Google.
+GitHub Actions runs the same checks for pull requests and main.
+
+The live sheet may contain operational personal/legal information. Keep records and credentials out of GitHub.
+Preserve Jotform, archives, custom layouts, and ownership. No routine schema regeneration or renaming.
+Historical docs remain available but are not current setup directions.

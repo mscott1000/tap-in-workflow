@@ -1,23 +1,23 @@
 # Tap In working rules
 
-1. Start with docs/CURRENT_PROJECT.md, config/project-registry.json, the dated header snapshot, and affected code/tests.
-2. Latest explicit user instructions control. Separate requested behavior, repository code, and verified live state. Older handoffs are historical, not today's installation directions.
-3. Use Client rows and Case rows. Phase titles: Intake, Research, Request, Follow Up, Graveyard. Preserve the original terminology agreement in docs/reference/TERMINOLOGY_V1_2026-10-23.md; do not silently amend it.
-4. Use literal table/view/action names and ALL CAPS data-point references in user instructions. Preserve exact spelling/case in executable code.
-5. Follow docs/CHANGE_PROCESS.md. Inspect first; gather changes, exclusions, questions, known permissions, and tests into one proposal before writes.
-6. Read-only work needs no change approval. An explicit, clearly scoped implementation request can authorize an ordinary edit. Do not add redundant proceed questions.
-7. One project approval never waives mandatory security/authentication/destructive-action confirmation. Stop for a new permission, protected workflow, conflict, risk, or material scope expansion.
-8. Authentication and live publication are user-deferred in this setup. Do not start logins, fetch browser tokens/cookies, expand access, or enable deployment without a new explicit request.
-9. Preserve the existing app, sheet, Jotform, archives, account ownership, and links. No schema regeneration, physical rename, record deletion, layout reset, or replacement app without specific approval.
-10. Do not change unrelated column order, grouping, widths, forms, colors, or views for a backend task. Cases belong to Clients through CLIENTROWID.
-11. History matching is advisory. No automatic merges, eligibility decisions, case submissions, messages, or submission gates. Uncertain parsing must not create a new work-row type.
-12. Keep code in GitHub. Use the browser for AppSheet-only settings and user-completed auth, not routine code transfer.
-13. Run npm test and npm run check; both must work without network or credentials. Synthetic tests do not establish live behavior.
-14. Never commit client records, email bodies, voicemail transcripts, secrets, or unreviewed live-source/documentation dumps.
-15. Publishing is disabled until live code is reconciled, user credentials configured, and an exact bundle approved. Never bypass baseline checks or blindly force-push script files.
-16. Preserve remote files not listed for replacement and the remote manifest. Apps Script updates replace a whole project; do not upload a partial inventory.
-17. AppSheet calls Apps Script HEAD, so publishing production code may affect bots immediately. A version number is not a staging barrier.
-18. Do not run live importers/generators as tests without explicit test scope. No operational records as fixtures.
-19. Distinguish prepared, saved, deployed, and verified. Unsaved browser drafts are not durable completion.
-20. Finish with completed, verified, failed, deferred, and live data changed yes/no. Update CURRENT_PROJECT.md with evidence and saved app version where relevant.
-21. Give browser-first user instructions. Do not require terminal commands, downloads, or desktop software when a web route exists.
+1. Start with docs/CURRENT_PROJECT.md, config/project-registry.json, config/live-schema.snapshot.json, and affected code/tests. Follow docs/CHANGE_PROCESS.md.
+2. Latest explicit user instructions control. Separate requested behavior, repository code, and verified installed state. Older handoffs are historical.
+3. Use Client rows and Case rows. Phase titles: Intake, Research, Request, Follow Up, Graveyard. Preserve docs/reference/TERMINOLOGY_V1_2026-10-23.md unchanged.
+4. Use literal table/view/action titles and ALL CAPS data-point references in user instructions. Preserve exact spelling/case in executable code.
+5. Inspect first. Give one complete proposal with changes, exclusions, necessary questions, tests, and user-only steps. A clearly scoped implementation request can authorize ordinary edits; do not ask repeated proceed questions.
+6. For an approved task, complete all relevant edits supported by the connected Google Drive/Sheets tools. Do not hand supported Sheet edits back to the user merely because AppSheet also needs changes.
+7. Direct Sheet edits are part of the standard workflow, not permission for arbitrary cleanup or unrelated data changes. Read exact tabs/ranges/headers/validation before writes, preserve unrelated cells, and read back results.
+8. A GitHub-connected Codex environment does not prove Google Drive tools are available. Check tools and exact-file access at task start. If unavailable, finish repository work, document precise unperformed Sheet edits, and identify the missing connection once. Do not fabricate a live verification.
+9. GitHub is the source of truth for maintained script code. Edit/test/commit complete changed script files here; the user copies approved files into Apps Script. Use config/script-installation.json and docs/SCRIPT_INSTALLATION.md for exact destinations and readiness.
+10. No automated Google login, browser handoff, custom OAuth client, token setup, clasp deployment, or Google publishing secrets. Do not install or run live scripts. User completes Apps Script/AppSheet sign-in, saves, and any actual runtime consent in their own browser.
+11. Preserve the existing app, sheet, Jotform, archives, ownership, record IDs, and links. No schema regeneration, physical rename, record deletion, layout reset, or replacement app without specific approval.
+12. Do not change unrelated column order, grouping, widths, forms, colors, or views for a backend task. Cases belong to Clients through CLIENTROWID.
+13. History matching is advisory: no automatic identity merges, eligibility decisions, submissions, messages, or submission gates. Uncertain parsing must not create a new work-row type.
+14. Run npm test and npm run check. npm run setup runs both without dependencies, network, or credentials. Synthetic tests do not establish live behavior.
+15. Never commit client records, email bodies, voicemail transcripts, credentials, or unreviewed live documentation dumps. Historical Intake 2026 is read-only.
+16. Prepare exact remaining AppSheet clicks and complete copy/paste expressions; never defer code development or supported Sheet edits just because the user must sign in later. Do not invent unobserved editor labels.
+17. Before replacing any script file, establish whether the user has newer live edits. Keep unverified copies marked as candidates. Preserve unrelated script files, appsscript.json, and existing triggers; do not tell the user to replace an entire project.
+18. Apps Script source saves can affect existing triggers/bots immediately. A saved source version is not a runtime staging barrier. Do not ask the user to run an importer/generator as a test without explicit test scope.
+19. One task approval does not waive mandatory security, protected workflow, conflict, destructive-action, or new-scope confirmation. Never obtain passwords/tokens through chat.
+20. Finish with completed Sheet changes, tested/committed code, user-only steps, failures, and live data changed yes/no. Update CURRENT_PROJECT.md and NEXT_STEPS.md with evidence. Prepared, copied/saved, and live-verified are different states.
+21. Give concise, browser-first instructions. Do not require the user's terminal, downloads, or desktop software when a web route exists.

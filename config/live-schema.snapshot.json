@@ -130,5 +130,11 @@
   "knownConflicts": [
     "Source Cases.CasePhase validation still uses numbered phase names.",
     "Generator raw ChargeClass values may be rejected by AppSheet."
-  ]
+  ],
+  "headerReadbackVerifiedOn": "2026-10-29",
+  "headerReadbackRanges": {
+    "Clients": "A1:AM1",
+    "Cases": "A1:AJ1",
+    "Communications": "A1:O1"
+  }
 }

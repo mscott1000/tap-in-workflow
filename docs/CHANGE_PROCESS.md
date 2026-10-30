@@ -1,34 +1,42 @@
 # One-proposal change process
 
-## Inspect
+## 1. Inspect
 
-Read AGENTS.md, CURRENT_PROJECT.md, the resource registry, affected code/tests, and already accessible live evidence.
-Identify exact targets; compare live fingerprints to the repository baseline.
-If access is absent, record the blocker. Do not guess or repeat logins.
+Read AGENTS.md, CURRENT_PROJECT.md, NEXT_STEPS.md, the resource registry, affected code/tests, and accessible live evidence.
+Check whether connected Google Drive tools exist in this task and can reach the exact spreadsheet.
+Use bounded live reads; a dated header snapshot is a starting point, not current proof.
+AppSheet configuration is not stored in Sheet cells. Record unknown settings instead of guessing them.
 
-## Propose once
+## 2. Propose once
 
-Present one package with:
-- Change: concrete result, exact targets/data points.
-- Unchanged: layouts, unrelated workflows, records, archives, ownership.
-- Questions/access: all known choices and permissions together; exact account, destination, scope. No secrets in chat.
-- Tests: synthetic and authorized live checks, with pass/fail criteria.
-- Recovery: exact prior version or narrow reversal.
+Present the concrete change, exact targets, what stays untouched, necessary questions/access, tests, and user-only editor steps.
+A clearly scoped instruction to implement can authorize ordinary edits. Do not ask another generic proceed question.
+Read-only requests do not authorize writes. Mandatory security/destructive-action confirmations still apply.
 
-Read-only and plan-only requests do not authorize external writes.
-A clearly scoped implementation instruction can authorize ordinary edits; avoid redundant approval.
-Project approval does not replace mandatory security/authentication/destructive-action confirmation.
+## 3. Complete the accessible work
 
-## Apply
+For an approved task, carry out all relevant edits supported by connected Google Drive/Sheets.
+Re-read affected cells, formulas, and validation before writing; preserve unrelated content; verify by readback.
+Do not defer supported Sheet edits just because the user must finish an AppSheet step later.
+Keep Intake 2026 read-only. Setup itself does not authorize unrelated fixes or changes to operational records.
 
-Use one focused change set. Run tests first. Publish only the approved target/bundle.
-Use connected Sheets access for exact data edits and AppSheet editor only for settings without a publishing API.
-Stop for new permissions, protected workflows, conflicting live edits, destructive actions, or material scope expansion.
+Edit and test Apps Script source in GitHub. Keep complete changed files ready to copy, with exact project/file destinations and a specific commit link.
+Before a replacement, establish whether a newer live copy needs reconciliation. Unknown installed state is not proof of equality.
+Do not set up Google deployment tokens or automated logins. Do not run live scripts or alter triggers.
 
-## Verify and report
+Commit focused changes and preserve unrelated user work. Finish safe independent work when another part is blocked.
 
-Keep prepared, saved, deployed, verified separate.
-Update CURRENT_PROJECT.md with evidence, commit, saved app version where applicable, and unresolved work.
-Keep personal records and credentials out of evidence.
-Report: completed; verified tests; concrete failures; deferred user work; live data changed yes/no.
-Do not ask another generic proceed question while a safe approved step remains.
+## 4. Leave only the user-only steps
+
+Use CHANGE_HANDOFF_TEMPLATE.md and update NEXT_STEPS.md.
+For each remaining step, give the exact destination, buttons, complete content to paste, save step, and success check.
+Use verified AppSheet names; label anything that requires a screenshot/current editor inspection.
+Installing Apps Script and configuring AppSheet are separate user steps when both are needed.
+New source can affect existing bots/triggers on save; do not equate a repository commit with an installation.
+
+## 5. Verify and report
+
+Report completed Sheet edits, tested/committed code, failed steps, and the short remaining editor checklist.
+State live data changed yes/no and distinguish prepared, user-reported installed, and live-verified.
+Update CURRENT_PROJECT.md with evidence and an AppSheet saved version only if actually observed.
+No client records or secrets in commits, test fixtures, screenshots, or handoff evidence.

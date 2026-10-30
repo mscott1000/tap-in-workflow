@@ -1,14 +1,14 @@
 {
   "name": "tap-in-workflow-control",
   "private": true,
-  "version": "1.0.0",
-  "description": "Synthetic tests and guarded releases for the existing Tap In project",
+  "version": "1.1.0",
+  "description": "Connected Sheet editing and tested copy-paste Apps Script source for Tap In",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
+    "setup": "node scripts/setup.mjs",
     "test": "node scripts/run-tests.mjs",
-    "check": "node scripts/check-project.mjs",
-    "release:plan": "node scripts/apps-script-release.mjs --mode plan --target appsheet-intake"
+    "check": "node scripts/check-project.mjs"
   }
 }
