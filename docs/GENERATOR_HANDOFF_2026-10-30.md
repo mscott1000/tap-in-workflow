@@ -1,3 +1,5 @@
+> **Scope update:** Follow [USER_SCOPE.md](USER_SCOPE.md) before using this historical handoff. User-confirmed working components are excluded from replacement and unsolicited follow-up. Current active work is the separate Google Voice process.
+
 # Case generation and remaining AppSheet work — 2026-10-30
 
 ## Completed and verified

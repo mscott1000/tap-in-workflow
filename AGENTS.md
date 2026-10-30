@@ -21,3 +21,5 @@
 19. One task approval does not waive mandatory security, protected workflow, conflict, destructive-action, or new-scope confirmation. Never obtain passwords/tokens through chat.
 20. Finish with completed Sheet changes, tested/committed code, user-only steps, failures, and live data changed yes/no. Update CURRENT_PROJECT.md and NEXT_STEPS.md with evidence. Prepared, copied/saved, and live-verified are different states.
 21. Give concise, browser-first instructions. Do not require the user's terminal, downloads, or desktop software when a web route exists.
+
+22. Read docs/USER_SCOPE.md before status reports or edits. Respect user-confirmed working areas and explicit instructions not to mention/reopen them unless the user does so. Current active work is Google Voice import; use docs/VOICE_IMPORT_PROCESS.md.
