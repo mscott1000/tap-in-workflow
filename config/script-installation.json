@@ -26,7 +26,8 @@
       "source": "integrations/voice-communications.gs",
       "project": "appsheet-intake",
       "editorFile": "voice-communications",
-      "state": "candidate-review-required"
+      "state": "tested-ready-user-installation",
+      "note": "One-minute incremental Gmail-history importer; install only voice-communications per docs/VOICE_INSTALLATION.md. Original uploaded snapshot preserved. Requires advanced Gmail service, explicit baseline, and owner-created timer."
     },
     {
       "source": "integrations/eligible-cases-install.gs",

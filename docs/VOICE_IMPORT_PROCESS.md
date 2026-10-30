@@ -1,6 +1,6 @@
 # Google Voice import process
 
-Status: process established 2026-10-30; implementation and activation pending. User now requests a 15-second cadence; native Apps Script cannot provide that recurring interval. Architecture choice is pending; see VOICE_INSTALLATION_EVIDENCE.md. The current checkpoint/thread-search implementation has not been replaced or enabled. Read USER_SCOPE.md before further work.
+Status: incremental importer implemented and synthetically tested on 2026-10-30; live installation/activation pending. The user explicitly selected **one-minute Apps Script polling**, replacing the earlier 15-second request. Follow [VOICE_INSTALLATION.md](VOICE_INSTALLATION.md). Read USER_SCOPE.md before further work.
 
 ## Decision
 
@@ -8,14 +8,14 @@ Use Gmail's incremental change history and message IDs. Start with new arrivals 
 
 Unread search was a useful small work queue, but a staff member reading a notification can remove it from that queue before import; marking a whole conversation read also affects other notifications. A Gmail history cursor gives an independent processing position while leaving read state untouched. No processed labels, archiving, deletion, or other mailbox writes are required.
 
-Use Apps Script's built-in advanced Gmail service for `Users.getProfile`, `Users.History.list`, `Users.Messages.get`, and bounded `Users.Messages.list` recovery. This requires enabling the Gmail service in the existing Apps Script project once and completing actual Google consent if requested. It does not require deployment tokens, a custom OAuth client, automated login, or new owner accounts. Reuse the existing mailbox-owning account. Do not change other project files or existing triggers.
+Use Apps Script's advanced Gmail service for `Users.getProfile`, `Users.History.list`, `Users.Messages.get`, and bounded `Users.Messages.list` recovery. This requires enabling the Gmail service in the existing Apps Script project once and completing actual Google consent if requested. It does not require deployment tokens, a custom OAuth client, automated login, or new owner accounts. Reuse the existing mailbox-owning account. Do not change other project files or existing triggers.
 
 ## Activation and normal run
 
 | Stage | Concrete behavior |
 | --- | --- |
 | Initialize | Capture current Gmail historyId and activation time as a baseline. Do not query old threads, import existing mail, or infer a backfill from old unread notifications. Activation explicitly means new notifications from this point forward. |
-| Poll | Requested schedule: every 15 seconds. Native Apps Script supports no such recurring interval; choose a supported architecture before installation. The old five-minute proposal is superseded. Request messageAdded history since the saved historyId. Ordinary idle runs inspect only changes, not a date-window replay. No new timer is installed until activation. |
+| Poll | Selected schedule: every one minute, explicitly chosen by the user. The 15-second and earlier five-minute proposals are superseded. Request messageAdded history since the saved historyId. Ordinary idle runs inspect only changes, not a date-window replay. No new timer is installed until activation. |
 | Filter | Inspect message headers first. Accept only the supported Google Voice sender and missed-call/voicemail subject patterns. Only accepted notifications need body retrieval. Use Gmail internalDate for receipt-time boundaries, not the sender's Date header. |
 | Batch | Process at most 50 candidate message IDs per execution. Persist page position and message offset; continue the unfinished batch next run rather than returning to the first 50. Small Gmail history pages also bound the header work for unrelated new mail. |
 | Save | Use existing message-ID-based COMMUNICATIONID and SOURCEMESSAGEID deduplication. Append the batch to Communications and flush successfully before committing progress for that batch. Preserve current classification, blank initial STATUS, and no transcript storage. |
@@ -51,4 +51,4 @@ This can legitimately process a large *new* backlog after a long outage, but eac
 
 ## Implementation boundary
 
-Only the Voice importer, its tests, and its installation documentation are in scope. No live mail or Sheet record is used as a test fixture. No source is installed, importer run, or trigger created by this process document. The current source remains the previously uploaded candidate until this design is implemented and tested.
+Only the Voice importer, its tests, copy-map metadata, and its documentation are changed. Exact uploaded snapshots and all other runtime sources are preserved. initializeTICVoiceSync creates an explicit idempotent baseline; runTICVoiceIngest processes bounded incremental batches; inspectTICVoiceSetup is read-only; enableTICVoiceMinuteTrigger creates only the selected timer when absent. No live source installation, initialization, import, or trigger creation has been performed.

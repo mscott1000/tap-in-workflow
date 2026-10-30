@@ -1,3 +1,5 @@
+> **Current Voice task:** [One-minute Voice installation](VOICE_INSTALLATION.md) changes only voice-communications. Its tested source uses incremental message history; activation is pending. Generator installation remains a separate handoff.
+
 > **Generator-only update:** See [GENERATOR_INSTALLATION.md](GENERATOR_INSTALLATION.md). Only eligible-cases-install is prepared for addition in AppSheet Intake. Do not replace other working files from this handoff.
 
 # Script source and user installation
@@ -15,7 +17,7 @@ The machine-readable map is ../config/script-installation.json.
 | integrations/gmail-phase-two-importer.gs | AppSheet Intake | appsheet-intake-forms | Maintained copy; live equality needs confirmation |
 | integrations/identity-review-core.js | AppSheet Intake | history-match-core | Maintained copy; live equality needs confirmation |
 | integrations/identity-review-adapter.gs | AppSheet Intake | history-match-adapter | Maintained copy; live equality needs confirmation |
-| integrations/voice-communications.gs | AppSheet Intake | voice-communications | Candidate; reconcile before replacement |
+| integrations/voice-communications.gs | AppSheet Intake | voice-communications | Tested incremental replacement; follow VOICE_INSTALLATION.md |
 | integrations/eligible-cases-install.gs | AppSheet Intake | eligible-cases-install | Tested generator-only update; follow GENERATOR_INSTALLATION.md |
 
 AppSheet Intake: https://script.google.com/home/projects/12e-XiMzRPQvbJEZ9Xr24wwnvOPoKcqgO8hyRPCi45iiCoZyfnRvmJYkz/edit
