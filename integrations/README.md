@@ -1,3 +1,5 @@
+> **Current entry point:** [Current project](../docs/CURRENT_PROJECT.md). Check it before following dated installation checkpoints below. New voice/case-generator files are reconciliation candidates only; live publishing is disabled. Their known defects are not repaired by this repository setup.
+
 # Tap In Center integrations
 
 ## Current history-check requirements (approved 2026-10-26)

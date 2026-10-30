@@ -1,0 +1,14 @@
+{
+  "name": "tap-in-workflow-control",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Synthetic tests and guarded releases for the existing Tap In project",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node scripts/run-tests.mjs",
+    "check": "node scripts/check-project.mjs",
+    "release:plan": "node scripts/apps-script-release.mjs --mode plan --target appsheet-intake"
+  }
+}

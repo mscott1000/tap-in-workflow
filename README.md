@@ -1,21 +1,26 @@
-# Tap In Center — Workflow Application
+# Tap In Center workflow
 
-Private project workspace for a **Google AppSheet-centered proof of concept** supporting the Tap In Center's existing warrant-assistance workflow.
+Start with [AGENTS.md](AGENTS.md) and [Current project](docs/CURRENT_PROJECT.md).
 
-## Start here
+This private repository supports the existing AppSheet app and Google Sheets. It is not a replacement app.
 
-**[AppSheet project handoff and technical context](docs/APPSHEET_WORK_HANDOFF.md)** — mission and phases, live prototype data schema, current state, AppSheet changes to implement in a Work browser session, existing scripts, and security requirements.
+- [Current project and outstanding work](docs/CURRENT_PROJECT.md)
+- [Resource registry](config/project-registry.json)
+- [Last observed sheet headers](config/live-schema.snapshot.json)
+- [One-proposal process](docs/CHANGE_PROCESS.md)
+- [User-completed setup](docs/USER_SETUP.md)
+- [Integration code and tests](integrations/README.md)
 
-**[Prototype Google Sheet](https://docs.google.com/spreadsheets/d/1Yhol_3USiPmUNNhz6Mmyou2ArJ93WAlCdEKzNfi5TD8/edit)** — synthetic/test-only data; six worksheets (`Clients`, `ServiceEpisodes`, `Cases`, `Interactions`, `HistoricalCaseIndex`, `ExportSelections`).
+## Active versus deferred
 
-## Immediate feature
+Repository tests use synthetic data and mocked Google services. Live publishing is disabled. The manual release workflow defaults to an offline plan and contains no credentials.
+Merging this repository does not update the live app, run importers, or create Client or Case rows.
+Authentication, secure credentials, live-source reconciliation, and the saved cloud environment are user-completed steps in USER_SETUP.md.
+AppSheet views, column settings, actions, and bots still require its editor; the repository does not publish those settings through an API.
 
-Make each court case move **independently** through AppSheet phases while remaining linked to a **single client identity**. Configure existing Request and Follow Up views using Cases slices and group by client. See the handoff for exact editor steps and test criteria.
+## Preservation and privacy
 
-## Safety
-
-- **No real client personal/legal data, credentials, API tokens, or unreviewed production script dumps in GitHub.**
-- This repository does **not** deploy or configure the AppSheet interface by itself; AppSheet UI changes require authenticated editor access.
-- The existing website Jotform intake, historical Google Sheets “graveyard”, and court-research automations should remain intact during the prototype.
-
-**Latest approved changes (2026-10-20):** [Phase Two grouped case entry, case/client ID migration, Add to Export, status formatting, and Interactions contact log](docs/PHASE_TWO_IDENTITY_EXPORT_INTERACTIONS_2026-10-20.md). These are implementation directives **pending changes in the authenticated AppSheet editor**, not live app changes.
+The live sheet may contain operational personal/legal information. It is not a fictional test database.
+Do not commit client records, messages, transcripts, credentials, or unreviewed app-documentation exports.
+Preserve Jotform, archives, custom layouts, and ownership. No routine schema regeneration or physical renaming.
+Older docs are historical evidence, not current installation instructions.
