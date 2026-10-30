@@ -1,6 +1,6 @@
 # Google Voice import process
 
-Status: process established 2026-10-30; implementation and activation pending. The current checkpoint/thread-search implementation has not been replaced or enabled. Read USER_SCOPE.md before further work.
+Status: process established 2026-10-30; implementation and activation pending. User now requests a 15-second cadence; native Apps Script cannot provide that recurring interval. Architecture choice is pending; see VOICE_INSTALLATION_EVIDENCE.md. The current checkpoint/thread-search implementation has not been replaced or enabled. Read USER_SCOPE.md before further work.
 
 ## Decision
 
@@ -15,7 +15,7 @@ Use Apps Script's built-in advanced Gmail service for `Users.getProfile`, `Users
 | Stage | Concrete behavior |
 | --- | --- |
 | Initialize | Capture current Gmail historyId and activation time as a baseline. Do not query old threads, import existing mail, or infer a backfill from old unread notifications. Activation explicitly means new notifications from this point forward. |
-| Poll | Proposed schedule: every five minutes. Request messageAdded history since the saved historyId. Ordinary idle runs inspect only changes, not a date-window replay. No new timer is installed until activation. |
+| Poll | Requested schedule: every 15 seconds. Native Apps Script supports no such recurring interval; choose a supported architecture before installation. The old five-minute proposal is superseded. Request messageAdded history since the saved historyId. Ordinary idle runs inspect only changes, not a date-window replay. No new timer is installed until activation. |
 | Filter | Inspect message headers first. Accept only the supported Google Voice sender and missed-call/voicemail subject patterns. Only accepted notifications need body retrieval. Use Gmail internalDate for receipt-time boundaries, not the sender's Date header. |
 | Batch | Process at most 50 candidate message IDs per execution. Persist page position and message offset; continue the unfinished batch next run rather than returning to the first 50. Small Gmail history pages also bound the header work for unrelated new mail. |
 | Save | Use existing message-ID-based COMMUNICATIONID and SOURCEMESSAGEID deduplication. Append the batch to Communications and flush successfully before committing progress for that batch. Preserve current classification, blank initial STATUS, and no transcript storage. |

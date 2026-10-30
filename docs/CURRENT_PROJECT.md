@@ -6,6 +6,8 @@ Updated: 2026-10-30, America/Chicago.
 
 **Google Voice → Communications** is not active, as confirmed by the user. The immediate goal is an efficient import process that does not repeatedly search or import thousands of historical threads.
 
+The user requests every 15 seconds and installation instructions with verified UI evidence. Official Google documentation establishes that native Apps Script recurring timers stop at one-minute frequency. No schedule was silently substituted. See [VOICE_INSTALLATION_EVIDENCE.md](VOICE_INSTALLATION_EVIDENCE.md); choosing a supported architecture is pending.
+
 The established process is [VOICE_IMPORT_PROCESS.md](VOICE_IMPORT_PROCESS.md): Gmail incremental message history, a new-arrival baseline at activation, bounded batches with persisted progress, write-before-checkpoint ordering, message-ID deduplication, and bounded recovery for expired history. The process is documented; the existing importer has not yet been changed to implement it or activated.
 
 Read [USER_SCOPE.md](USER_SCOPE.md) before any status report or edit. It records the user's explicit closed-topic boundaries and supersedes obsolete pending items in older handoffs. Do not repeat broad automation inventories or reopen those areas.
