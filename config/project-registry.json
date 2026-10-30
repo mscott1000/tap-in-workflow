@@ -8,8 +8,8 @@
     "appId": "4f5da70c-4818-4b2d-82cf-3a668bd8276e",
     "title": "Tap In Center",
     "lastObservedSavedVersion": "1.000584",
-    "configurationEditing": "AppSheet editor; no configuration-publishing API configured",
-    "authenticationStatus": "user setup deferred"
+    "configurationEditing": "User-completed AppSheet editor changes from exact repository handoff",
+    "authenticationStatus": "User signs in directly when editor work is needed; no automated login"
   },
   "spreadsheets": {
     "working": {
@@ -58,9 +58,16 @@
     }
   },
   "access": {
-    "googleDeploymentCredentialsConfigured": false,
+    "googleDriveConnection": {
+      "lastCheckedOn": "2026-10-29",
+      "scope": "Working spreadsheet metadata and Clients/Cases/Communications header rows only",
+      "readVerified": true,
+      "writeVerified": false,
+      "note": "Recheck tools and file access in each new environment task; no live write attempted for setup."
+    },
+    "scriptInstallation": "User copies approved complete repository files into Apps Script",
+    "automatedGooglePublishing": false,
     "runtimeAuthorizationVerified": false,
-    "publishedCloudEnvironmentVerified": false,
-    "userMustCompleteAuthentication": true
+    "publishedCloudEnvironmentVerified": false
   }
 }

@@ -1,4 +1,4 @@
-> **Current entry point:** [Current project](../docs/CURRENT_PROJECT.md). Check it before following dated installation checkpoints below. New voice/case-generator files are reconciliation candidates only; live publishing is disabled. Their known defects are not repaired by this repository setup.
+> **Current workflow:** Read [Current project](../docs/CURRENT_PROJECT.md) and [Script installation](../docs/SCRIPT_INSTALLATION.md) first. GitHub holds maintained code; the user copies only approved changed files into Apps Script. Dated live-installation notes below are historical checkpoints, not proof of today's installed code. Voice/generator copies remain candidates until reviewed.
 
 # Tap In Center integrations
 

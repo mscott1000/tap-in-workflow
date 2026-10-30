@@ -7,7 +7,7 @@ const tests = [
   'integrations/identity-review-core.test.js',
   'integrations/eligible-cases-core.test.js',
   'integrations/voice-communications.test.cjs',
-  'tests/release.test.mjs'
+  'tests/workflow.test.mjs'
 ];
 let failed = 0;
 for (const test of tests) {
