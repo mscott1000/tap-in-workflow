@@ -8,7 +8,8 @@ const tests = [
   'integrations/eligible-cases-core.test.js',
   'integrations/eligible-cases-adapter.test.cjs',
   'integrations/voice-communications.test.cjs',
-  'tests/workflow.test.mjs'
+  'tests/workflow.test.mjs',
+  'tests/auto-merge.test.mjs'
 ];
 let failed = 0;
 for (const test of tests) {
