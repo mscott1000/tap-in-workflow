@@ -16,3 +16,7 @@ Verify Google Drive access in a new task; connection availability is separate fr
 
 These are future app-change tasks, not instructions to install all existing candidate code now.
 After each task, replace this list with only the actual remaining user steps and unresolved work.
+
+## GitHub auto-merge installation — 2026-10-30
+
+User authorized the repository auto-merge workflow. See [AUTO_MERGE.md](AUTO_MERGE.md). GitHub currently enables auto-merge/squash and main requires synthetic-checks. Bootstrap [PR #26](https://github.com/mscott1000/tap-in-workflow/pull/26) passes its required synthetic-checks job and has native squash auto-merge enabled. Installation is blocked by GitHub reviewDecision REVIEW_REQUIRED: main requires an independent approving review. The connection acts as the PR author and cannot approve its own PR. The workflow is not on main or active yet; it will be installed when GitHub merges the approved PR. No review requirement was removed or bypassed. No external app or Sheet records changed.
