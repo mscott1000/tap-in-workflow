@@ -4,14 +4,16 @@ Read [USER_SCOPE.md](USER_SCOPE.md) first. Navigation/install instructions must 
 
 Required synthetic checks and automatic merging are verified. PRs #27 and #28 put the recovered project context, exact uploads, and generator-only fixes on main. The environment already exists. These are completed tasks, not setup steps to repeat.
 
-## Task 4: Google Voice — not started
+## Task 4: Google Voice — ready for staged user installation
 
-1. Resolve the architecture choice: the requested 15-second recurring timer is unavailable in native Apps Script. Choose event-driven Gmail notifications or one-minute native polling; see [VOICE_INSTALLATION_EVIDENCE.md](VOICE_INSTALLATION_EVIDENCE.md). Do not substitute an interval without the user's decision.
-2. Implement the selected architecture using [VOICE_IMPORT_PROCESS.md](VOICE_IMPORT_PROCESS.md): new-arrival baseline, bounded message batches, persisted progress, write-before-checkpoint ordering, deduplication, and bounded recovery.
-3. Complete the specified synthetic failure/pagination/retry checks and repository checks. Preserve the original uploaded snapshots and user-confirmed working components.
-4. Prepare complete changed source and verified, browser-first installation steps. Any live activation requires its specific agreed scope. No historical backfill by default.
+The user selected **one-minute Apps Script polling** and authorized implementation. The incremental engine and synthetic tests are prepared; the earlier architecture-choice blocker is resolved.
 
-The user is working through tasks one at a time. Do not move from the status-documentation task into implementation without their direction.
+1. Follow [VOICE_INSTALLATION.md](VOICE_INSTALLATION.md), starting from its direct Google Apps Script project URL. Confirm no newer Voice source edits before replacing only voice-communications.
+2. Enable the built-in Gmail API service and run only the read-only inspectTICVoiceSetup diagnostic. Report that result before initializing or activating anything.
+3. Agree the new-arrival activation/test scope, initialize the baseline explicitly, and verify a controlled staff notification plus a deduplicated repeat. No historical backfill or client fixtures.
+4. After approval of live processing, run the explicit enableTICVoiceMinuteTrigger helper and observe a scheduled execution. Preserve other working scripts and triggers.
+
+Code is prepared, not installed or live-verified. No operational source was run or data changed by Codex. The full staged guide cites evidence for controls and identifies unobserved account-specific states rather than inventing a click path.
 
 ## Remaining user-completed app work
 
