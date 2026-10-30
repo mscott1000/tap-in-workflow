@@ -2,6 +2,8 @@
 
 Updated: 2026-10-30, America/Chicago.
 
+Required communication standard: read [INSTRUCTION_CLARITY.md](INSTRUCTION_CLARITY.md) before navigation/setup instructions. AGENTS.md rule 23 records the user's request to retain this standard durably.
+
 ## Active work
 
 **Google Voice → Communications** is not active, as confirmed by the user. The immediate goal is an efficient import process that does not repeatedly search or import thousands of historical threads.

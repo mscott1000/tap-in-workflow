@@ -14,3 +14,7 @@ Treat these as user-confirmed working. Do not reopen them, request verification,
 Current focus: **Google Voice → Communications**. User confirms this is **not active**. Establish an efficient import process without importing/searching thousands of historical threads. The legacy unread approach was satisfactory; avoid a complex replacement that repeats broad mailbox scans.
 
 No live activation, mailbox modification, historical backfill, or operational test has occurred in establishing the process.
+
+## Communication requirement
+
+The user explicitly requested durable retention of [INSTRUCTION_CLARITY.md](INSTRUCTION_CLARITY.md). Before giving any UI instruction, establish the application, format, verified starting URL, project, and expected screen. Then provide the exact evidenced control/location, action/value, and expected result. Never assume an open window, bookmark, or innate knowledge of the interface. This requirement is also enforced by AGENTS.md rule 23.
