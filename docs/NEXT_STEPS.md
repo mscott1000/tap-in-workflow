@@ -16,3 +16,7 @@ Verify Google Drive access in a new task; connection availability is separate fr
 
 These are future app-change tasks, not instructions to install all existing candidate code now.
 After each task, replace this list with only the actual remaining user steps and unresolved work.
+
+## Script uploads received 2026-10-30
+
+Four user-supplied AppSheet Intake scripts are permanently preserved, byte-for-byte, in [the dated source snapshot](../integrations/source-snapshots/2026-10-30/README.md), with exact editor names, maintained-file mappings, and SHA-256 hashes in manifest.json. Consult these before asking the user for scripts again. They include newer/different history wording, GMT date reads, and checkpoint-based Voice ingestion. Maintained files have not yet been reconciled. User identifies the uploads as connected Google Drive scripts; current installed Apps Script equality remains unverified. No generator was supplied. Next source-reconciliation work must compare these snapshots with maintained code and review AppSheet status compatibility and date handling. No installation or live data changes occurred.

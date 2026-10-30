@@ -93,3 +93,7 @@ The environment itself must still be created and published by the user through U
 No live scripts installed/run, AppSheet saves, trigger changes, or Sheet data edits were performed for environment preparation.
 
 Verification for this revision: npm run setup passed all five synthetic suites and source/configuration checks. Live Sheet verification was limited to metadata and the three header rows above. No runtime or AppSheet verification is claimed.
+
+## Script uploads received 2026-10-30
+
+Four user-supplied AppSheet Intake scripts are permanently preserved, byte-for-byte, in [the dated source snapshot](../integrations/source-snapshots/2026-10-30/README.md), with exact editor names, maintained-file mappings, and SHA-256 hashes in manifest.json. Consult these before asking the user for scripts again. They include newer/different history wording, GMT date reads, and checkpoint-based Voice ingestion. Maintained files have not yet been reconciled. User identifies the uploads as connected Google Drive scripts; current installed Apps Script equality remains unverified. No generator was supplied. Next source-reconciliation work must compare these snapshots with maintained code and review AppSheet status compatibility and date handling. No installation or live data changes occurred.
