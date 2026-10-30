@@ -15,6 +15,12 @@ The user authorized installation of this policy on 2026-10-30.
 
 Installation verification is recorded in CURRENT_PROJECT.md. GitHub must have Allow auto-merge enabled and squash merging allowed. If repository/organization policy blocks the built-in token from merging, the workflow reports that failure; do not weaken branch protection or add credentials to work around it silently.
 
-## Verified installation and current blocker
+## Verified installation and operation
 
-PR #26 merged on 2026-10-30 at 20:08:30 UTC; the workflow is on main. GitHub permits auto-merge and squash merging. At the subsequent assessment, main had no required status-check contexts. The workflow fails closed in that configuration. Restoring required synthetic-checks through the connected integration returned HTTP 403: Resource not accessible by integration. Runtime enrollment has not been demonstrated successfully. Require synthetic-checks without restoring a mandatory independent-review gate for this sole-owner repository.
+- [PR #26](https://github.com/mscott1000/tap-in-workflow/pull/26) installed the workflow on main.
+- The user restored required `synthetic-checks` and Codex verified the context is bound to GitHub Actions app 15368. The earlier missing-check/HTTP-403 setting problem is resolved by that user-completed change, not a pending installation blocker.
+- [PR #28](https://github.com/mscott1000/tap-in-workflow/pull/28) demonstrated end-to-end operation: `app/github-actions` enabled auto-merge and performed its squash merge into main at `77542212e659f79e0e50bcef448d57deb096e328`.
+- The PR's [enrollment run](https://github.com/mscott1000/tap-in-workflow/actions/runs/41124337996) and [required verification run](https://github.com/mscott1000/tap-in-workflow/actions/runs/41124337950) both succeeded.
+- There is no mandatory independent-review gate blocking the sole-owner workflow. GitHub currently reports required-check enforcement as `non_admins`; this workflow never uses admin bypass.
+
+Older failed enrollment runs predate the restored requirement and are historical evidence, not current failures. Future failures should be diagnosed from the affected run and current settings. The workflow still stops if the required check is removed or unreadable.

@@ -1,27 +1,35 @@
 # Current Tap In project
 
-Updated: 2026-10-30, America/Chicago. Read USER_SCOPE.md before status reports or edits and INSTRUCTION_CLARITY.md before any navigation/install instructions. They record explicit user requirements and supersede conflicting historical checklists.
+Updated: 2026-10-30, America/Chicago. Read [USER_SCOPE.md](USER_SCOPE.md) before status reports or edits and [INSTRUCTION_CLARITY.md](INSTRUCTION_CLARITY.md) before navigation/install instructions. They record explicit user requirements and supersede conflicting historical checklists.
 
-## Current verified state
+## Verified repository state
 
-- The cloud environment is running. Do not repeat environment creation.
-- Main at assessment commit 5d5ad71 passes all six current synthetic suites and source/configuration checks. This is repository evidence, not live application verification.
-- Auto-merge workflow is installed through PR #26. GitHub currently enables auto-merge and squash merging, but main has no required check contexts. The workflow deliberately refuses to merge without required synthetic-checks. Restoring that requirement through this connection failed with GitHub HTTP 403: Resource not accessible by integration. No independent-review requirement should be added for this sole-owner workflow.
-- PR #25 was closed without merging. Its uploaded source snapshots and instruction/scope rules are being recovered in a documentation/source-evidence PR; runtime source files are unchanged in that recovery.
-- The exact four user uploads are preserved under integrations/source-snapshots/2026-10-30/, with project/editor mappings and hashes. Consult these before asking the user to supply those files again. Archival evidence is distinct from maintained source and independently verified installed equality.
-- The user confirmed the existing Case form view is Case_Form. No replacement form is needed.
-- The earlier Sheet validation repair was completed and read back without record-value changes. That evidence does not install repository scripts or AppSheet settings.
+| Item | Current evidence |
+| --- | --- |
+| Environment | The cloud environment is running. Environment creation is complete. |
+| Required tests | Main requires `synthetic-checks`, bound to the GitHub Actions app (15368). The user restored this setting and Codex verified it through GitHub. Enforcement is `non_admins`; the automation never requests admin bypass. |
+| Automatic merging | Installed through [PR #26](https://github.com/mscott1000/tap-in-workflow/pull/26), and demonstrated by [PR #28](https://github.com/mscott1000/tap-in-workflow/pull/28): `app/github-actions` enabled and performed its squash merge. [Enrollment run 41124337996](https://github.com/mscott1000/tap-in-workflow/actions/runs/41124337996) succeeded. No independent approval gate blocks this sole-owner workflow. |
+| Durable project context | [PR #27](https://github.com/mscott1000/tap-in-workflow/pull/27) merged the exact uploaded source snapshots and user scope/instruction rules into main. The earlier closed PR #25 is not a current blocker. |
+| Generator source | [PR #28](https://github.com/mscott1000/tap-in-workflow/pull/28) merged the generator-only mapping, dependency, warning, and retry fixes. Other working runtime files were preserved. Complete source/destination and configuration values are in [GENERATOR_INSTALLATION.md](GENERATOR_INSTALLATION.md). |
+| Test evidence | Code baseline `77542212e659f79e0e50bcef448d57deb096e328` passed all seven synthetic suites and source/configuration checks locally. Its PR's [GitHub verification run 41124337950](https://github.com/mscott1000/tap-in-workflow/actions/runs/41124337950) also passed. Documentation-only commits may follow that code baseline. |
 
-## Work still pending
+The exact four user uploads are permanently preserved under `integrations/source-snapshots/2026-10-30/`, with project/editor mappings and SHA-256 hashes. Consult these before requesting those files again. Archive provenance, maintained source, and independently verified live installation are different evidence states.
 
-1. Restore required synthetic-checks on main, leaving independent approval optional. The connected integration cannot change branch-protection settings; see AUTO_MERGE.md for the workflow policy.
-2. Recover only the relevant generator mapping/dependency/retry fixes and meaningful adapter tests. Do not restore changes to user-confirmed working components from the closed PR.
-3. Prepare a generator-only installation handoff using the existing scripts as dependencies. No new live source equality, AppSheet bot/view configuration, or end-to-end generation test is established by Git merges.
-4. Google Voice remains inactive. Its incremental-message design is in VOICE_IMPORT_PROCESS.md, not implemented source. The requested 15-second native timer is unsupported. Architecture selection between event-driven Gmail notifications and one-minute native polling remains pending; see VOICE_INSTALLATION_EVIDENCE.md.
-5. Complete remaining AppSheet setup and an explicitly scoped fictional live test through the user-completed browser workflow. Never use operational records as fixtures.
+## Four-task recovery checklist
 
-## Stable project rules
+1. **Required synthetic checks — complete.** The required context is restored and verified; do not reopen the resolved setting as a pending task.
+2. **Recover missing context and generator fixes — complete.** PRs #27 and #28 are merged into main.
+3. **Reconcile status documentation — this update.** Current/next-step/auto-merge documents now distinguish verified completion from remaining application work.
+4. **Google Voice implementation — pending architecture decision.** See below. Do not begin it merely because the documentation update merged; the user is proceeding task by task.
 
-Preserve the existing app, Jotform, custom layouts, archives, keys, ownership, scripts, and triggers. Use Client rows and child Case rows linked by CLIENTROWID. Exact resources are in config/project-registry.json and physical headers in config/live-schema.snapshot.json. Preserve reference/TERMINOLOGY_V1_2026-10-23.md unchanged; latest explicit user instructions control. History advice never makes eligibility decisions, merges identities, or submits messages/requests automatically.
+## Actual remaining work
 
-No operational records or secrets are included in this recovery. GitHub merges do not install Apps Script or save AppSheet settings.
+- **Google Voice:** user-confirmed inactive. [VOICE_IMPORT_PROCESS.md](VOICE_IMPORT_PROCESS.md) describes an incremental-message design; it is not implemented in the maintained importer. The requested 15-second recurring native Apps Script timer is unsupported. Choose event-driven Gmail notifications or one-minute native polling before architecture-dependent implementation. Do not silently replace the requested interval. [VOICE_INSTALLATION_EVIDENCE.md](VOICE_INSTALLATION_EVIDENCE.md) records the platform evidence.
+- **Generator installation and app configuration:** repository source and the generator-only handoff are ready. No new evidence establishes live installation, saved generator-bot configuration, manual fallback/display configuration, or Request/Graveyard presentation. The confirmed existing form is **Case_Form**; no replacement form is needed. User-completed editor work must follow the exact source/destination and expressions in the handoff, without changing other working files or layouts.
+- **Live verification:** repository checks and GitHub merges do not establish live operation. Identify an explicitly fictional fixture and agreed test scope before user-run generation and a repeated deduplication check. Operational records are not fixtures.
+
+## Stable project rules and evidence boundaries
+
+Preserve the existing app, Jotform, custom layouts, archives, keys, ownership, scripts, and triggers. Use Client rows and child Case rows linked by CLIENTROWID. Exact resources are in `config/project-registry.json` and physical headers in `config/live-schema.snapshot.json`. Preserve `reference/TERMINOLOGY_V1_2026-10-23.md` unchanged; latest explicit user instructions control. Advisory evidence never automatically decides eligibility, merges identities, or submits messages/requests.
+
+The earlier narrowly scoped Sheet validation repair was completed and read back without record-value changes. This documentation reconciliation changes no live data, scripts, triggers, GitHub settings, or AppSheet configuration. GitHub merges do not install Apps Script or save AppSheet settings.
