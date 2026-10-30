@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "allowApply": false,
+  "targets": {
+    "appsheet-intake": {
+      "scriptId": "12e-XiMzRPQvbJEZ9Xr24wwnvOPoKcqgO8hyRPCi45iiCoZyfnRvmJYkz",
+      "enabled": false,
+      "reconciliationComplete": false,
+      "baselineSha256": null,
+      "expectedExistingFiles": [
+        "appsheet-intake-forms",
+        "history-match-core",
+        "history-match-adapter",
+        "voice-communications"
+      ],
+      "files": [
+        {
+          "name": "appsheet-intake-forms",
+          "type": "SERVER_JS",
+          "path": "integrations/gmail-phase-two-importer.gs"
+        },
+        {
+          "name": "history-match-core",
+          "type": "SERVER_JS",
+          "path": "integrations/identity-review-core.js"
+        },
+        {
+          "name": "history-match-adapter",
+          "type": "SERVER_JS",
+          "path": "integrations/identity-review-adapter.gs"
+        },
+        {
+          "name": "voice-communications",
+          "type": "SERVER_JS",
+          "path": "integrations/voice-communications.gs"
+        },
+        {
+          "name": "eligible-cases-install",
+          "type": "SERVER_JS",
+          "path": "integrations/eligible-cases-install.gs"
+        }
+      ],
+      "blockers": [
+        "User authentication and secret setup deferred.",
+        "Live source/manifest reconciliation pending.",
+        "Generator mappings, Add Case fallback, and history integration not live-verified."
+      ]
+    }
+  }
+}

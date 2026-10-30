@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 1,
+  "observedOn": "2026-10-29",
+  "source": "Earlier read-only connected-sheet and AppSheet inspection in this task",
+  "containsRowData": false,
+  "notAnAutomaticMigration": true,
+  "tables": {
+    "Clients": {
+      "sheetId": 201000002,
+      "headers": [
+        "ClientID",
+        "ClientRowID",
+        "FirstName",
+        "LastName",
+        "MiddleName",
+        "DOB",
+        "Phone",
+        "Email",
+        "Address",
+        "ClientPhase",
+        "ClientStatus",
+        "CurrentClientRowID",
+        "TICWeek",
+        "FirstContactDate",
+        "PrimaryService",
+        "TICStaff",
+        "ReasonMissingCourtCategory",
+        "ReasonMissingCourtText",
+        "PriorTICClient",
+        "PriorTICClientReason",
+        "Log",
+        "EligibleNotes",
+        "IneligibleNotes",
+        "DateFormSubmitted",
+        "Race",
+        "Gender",
+        "Location",
+        "ReferralSource",
+        "ReferToHolland",
+        "ConsentToRequest",
+        "EligibleCases",
+        "IneligibleCases",
+        "CourtDateObtained",
+        "PrimaryContactMethod",
+        "OnlineForm",
+        "Notes",
+        "ContactLog",
+        "CaseGenerationRequestedAt",
+        "Court Contact"
+      ]
+    },
+    "Cases": {
+      "sheetId": 201000003,
+      "headers": [
+        "CaseID",
+        "ClientID",
+        "ClientRowID",
+        "Jurisdiction",
+        "CaseNumber",
+        "CaseKey",
+        "AttorneyStatus",
+        "ResearchStatus",
+        "Eligible",
+        "ResearchNotes",
+        "CasePhase",
+        "CaseStatus",
+        "ReasonMissingCourtCategory",
+        "ReasonMissingCourtText",
+        "NumberOfCounts",
+        "ChargeType",
+        "ChargeClass",
+        "ChargeText",
+        "ChargeCategory",
+        "BondAmount",
+        "AttorneyName",
+        "Division",
+        "WarrantIssueDate",
+        "PriorTICRecall",
+        "PAOnCall",
+        "PAConsent",
+        "WarrantRecalled",
+        "NextCourtDate",
+        "CaseLink",
+        "RequestSentDate",
+        "ClientNotifiedDate",
+        "NotificationMethod",
+        "NotificationNotes",
+        "ContactLog",
+        "CurrentTask"
+      ]
+    },
+    "Communications": {
+      "sheetId": 29001001,
+      "headers": [
+        "CommunicationID",
+        "ContactType",
+        "Phone",
+        "Date",
+        "Time",
+        "StaffNotes",
+        "ContactLog",
+        "Status",
+        "FirstName",
+        "MiddleName",
+        "LastName",
+        "ClientRowID",
+        "SourceMessageID",
+        "SourceTimestamp",
+        "MatchDetails"
+      ]
+    }
+  },
+  "appsheetObservations": {
+    "Cases.ChargeClass": {
+      "type": "Enum",
+      "allowedValues": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "O"
+      ],
+      "allowOtherValues": false
+    },
+    "Cases.WarrantIssueDate": {
+      "type": "Text"
+    }
+  },
+  "knownConflicts": [
+    "Source Cases.CasePhase validation still uses numbered phase names.",
+    "Generator raw ChargeClass values may be rejected by AppSheet."
+  ]
+}

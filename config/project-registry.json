@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "updatedOn": "2026-10-29",
+  "timeZone": "America/Chicago",
+  "repository": "mscott1000/tap-in-workflow",
+  "defaultBranch": "main",
+  "appsheet": {
+    "appId": "4f5da70c-4818-4b2d-82cf-3a668bd8276e",
+    "title": "Tap In Center",
+    "lastObservedSavedVersion": "1.000584",
+    "configurationEditing": "AppSheet editor; no configuration-publishing API configured",
+    "authenticationStatus": "user setup deferred"
+  },
+  "spreadsheets": {
+    "working": {
+      "id": "1Yhol_3USiPmUNNhz6Mmyou2ArJ93WAlCdEKzNfi5TD8",
+      "title": "Tap In Center — AppSheet System",
+      "containsOperationalData": true
+    },
+    "historical": {
+      "id": "1TPCAM7rJ9e_YDLrgI4YfjOq_QXZFfo6Sj6c9g9qPth4",
+      "title": "Intake 2026",
+      "readOnly": true,
+      "tabs": [
+        "TIC Graveyard",
+        "Completed Call Log"
+      ]
+    }
+  },
+  "scriptProjects": {
+    "appsheet-intake": {
+      "id": "12e-XiMzRPQvbJEZ9Xr24wwnvOPoKcqgO8hyRPCi45iiCoZyfnRvmJYkz",
+      "title": "AppSheet Intake",
+      "observedOwner": "Tap In Center",
+      "observedFiles": [
+        "appsheet-intake-forms",
+        "history-match-core",
+        "history-match-adapter",
+        "voice-communications"
+      ],
+      "runtimeFunctions": [
+        "runIngest",
+        "runTICVoiceIngest",
+        "checkClientHistory",
+        "checkCaseHistory",
+        "runTICIntakeChecks"
+      ],
+      "liveSourceEqualityVerified": false
+    },
+    "legacy-workflow": {
+      "id": "1276lZVOEsjqcwnv0es_PThG744k9fXKsyj-fZSrsD6QobtQnO_OJh51K",
+      "title": "Tap In Workflow",
+      "observedOwner": "Tap In Center",
+      "generatorFileObserved": "eligible-cases-install",
+      "generatorEntryPoint": "createEligibleCasesForClient",
+      "publishingAllowed": false,
+      "note": "Preserve legacy workflows/triggers; generator location lacks its history-check dependency."
+    }
+  },
+  "access": {
+    "googleDeploymentCredentialsConfigured": false,
+    "runtimeAuthorizationVerified": false,
+    "publishedCloudEnvironmentVerified": false,
+    "userMustCompleteAuthentication": true
+  }
+}
