@@ -14,3 +14,7 @@ The user authorized installation of this policy on 2026-10-30.
 - A successful merge places repository code/docs in main. It does not install operational scripts or edit external applications.
 
 Installation verification is recorded in CURRENT_PROJECT.md. GitHub must have Allow auto-merge enabled and squash merging allowed. If repository/organization policy blocks the built-in token from merging, the workflow reports that failure; do not weaken branch protection or add credentials to work around it silently.
+
+## Bootstrap status
+
+PR #26 is the focused installation PR. Its initial GitHub synthetic-checks run passed; native squash auto-merge is enabled. Main currently also requires an independent approving review, so GitHub reports REVIEW_REQUIRED and has not merged it. The authenticated connection uses the author account and cannot supply an independent approval. No admin bypass or branch-protection change was attempted. The workflow becomes active only once it reaches main.
