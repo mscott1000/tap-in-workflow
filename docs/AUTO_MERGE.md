@@ -15,6 +15,6 @@ The user authorized installation of this policy on 2026-10-30.
 
 Installation verification is recorded in CURRENT_PROJECT.md. GitHub must have Allow auto-merge enabled and squash merging allowed. If repository/organization policy blocks the built-in token from merging, the workflow reports that failure; do not weaken branch protection or add credentials to work around it silently.
 
-## Bootstrap status
+## Verified installation and current blocker
 
-PR #26 is the focused installation PR. Its initial GitHub synthetic-checks run passed; native squash auto-merge is enabled. Main currently also requires an independent approving review, so GitHub reports REVIEW_REQUIRED and has not merged it. The authenticated connection uses the author account and cannot supply an independent approval. No admin bypass or branch-protection change was attempted. The workflow becomes active only once it reaches main.
+PR #26 merged on 2026-10-30 at 20:08:30 UTC; the workflow is on main. GitHub permits auto-merge and squash merging. At the subsequent assessment, main had no required status-check contexts. The workflow fails closed in that configuration. Restoring required synthetic-checks through the connected integration returned HTTP 403: Resource not accessible by integration. Runtime enrollment has not been demonstrated successfully. Require synthetic-checks without restoring a mandatory independent-review gate for this sole-owner repository.

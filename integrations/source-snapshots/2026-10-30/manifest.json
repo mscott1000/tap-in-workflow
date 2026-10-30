@@ -1,0 +1,35 @@
+{
+  "receivedOn": "2026-10-30",
+  "provenance": "Four pasted-text attachments supplied by the user in this chat; user identifies these as scripts in connected Google Drive. Live Apps Script source equality not independently verified.",
+  "project": "AppSheet Intake",
+  "files": [
+    {
+      "editorFile": "appsheet-intake-forms.gs",
+      "snapshot": "integrations/source-snapshots/2026-10-30/appsheet-intake-forms.gs",
+      "maintainedSource": "integrations/gmail-phase-two-importer.gs",
+      "sha256": "512c15de2dca2d4eb9a9ac220911882f5540b9ac5217ae3f6f8e69bb851ec415",
+      "bytes": 22432
+    },
+    {
+      "editorFile": "history-match-core.gs",
+      "snapshot": "integrations/source-snapshots/2026-10-30/history-match-core.gs",
+      "maintainedSource": "integrations/identity-review-core.js",
+      "sha256": "68b44aa52fdf13a1315dc5ec944b701f19c50589c50043773f4ac52618af429c",
+      "bytes": 6919
+    },
+    {
+      "editorFile": "history-match-adapter.gs",
+      "snapshot": "integrations/source-snapshots/2026-10-30/history-match-adapter.gs",
+      "maintainedSource": "integrations/identity-review-adapter.gs",
+      "sha256": "37c228b9e43fe1628d5532a6193bdb4f601cc9fae06a2610e505559629ed24d0",
+      "bytes": 15551
+    },
+    {
+      "editorFile": "voice-communications.gs",
+      "snapshot": "integrations/source-snapshots/2026-10-30/voice-communications.gs",
+      "maintainedSource": "integrations/voice-communications.gs",
+      "sha256": "72155348ca2c1604fc95ff979ed31164430dff740f88f8bb528eb5076ce8e25a",
+      "bytes": 10739
+    }
+  ]
+}
