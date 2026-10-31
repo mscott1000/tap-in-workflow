@@ -11,9 +11,9 @@ The user confirmed the following work and explicitly instructed Codex not to men
 
 Treat these as user-confirmed working. Do not reopen them, request verification, include them in unsolicited status tables, propose replacements, or edit their code/settings as collateral work. User confirmation is the evidence; do not mislabel it as an independent inspection by Codex. Historical handoffs may contain obsolete pending items.
 
-Current focus: **Google Voice → Communications**. User confirms this is **not active**. Establish an efficient import process without importing/searching thousands of historical threads. The legacy unread approach was satisfactory; avoid a complex replacement that repeats broad mailbox scans.
+**Google Voice → Communications is complete and user-confirmed working.** The user installed the incremental importer, connected the correct receiving mailbox, verified a new call and a duplicate-free repeat, enabled one-minute polling, and confirmed scheduled operation. See [Voice live verification](VOICE_LIVE_VERIFICATION.md). Preserve its state and timer; do not repeat setup or reopen it without a new user request. No historical backfill was requested or performed.
 
-No live activation, mailbox modification, historical backfill, or operational test has occurred in establishing the process.
+The user ran the live functions and created a Communications row. Codex did not run live scripts or create triggers through tools. Remaining application work is listed in NEXT_STEPS.md; the next task has not yet been selected.
 
 ## Communication requirement
 

@@ -26,8 +26,8 @@
       "source": "integrations/voice-communications.gs",
       "project": "appsheet-intake",
       "editorFile": "voice-communications",
-      "state": "tested-ready-user-installation",
-      "note": "One-minute incremental Gmail-history importer; install only voice-communications per docs/VOICE_INSTALLATION.md. Original uploaded snapshot preserved. Requires advanced Gmail service, explicit baseline, and owner-created timer."
+      "state": "user-confirmed-live",
+      "note": "User saved PR #30 source, enabled advanced Gmail service, initialized the correct receiving mailbox, verified one new call and no duplicate on repeat, created the one-minute timer, and confirmed scheduled operation. Preserve working state/timer. Evidence: docs/VOICE_LIVE_VERIFICATION.md; not independently inspected through authenticated UI by Codex."
     },
     {
       "source": "integrations/eligible-cases-install.gs",
