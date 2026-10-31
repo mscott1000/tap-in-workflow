@@ -1,6 +1,6 @@
 # Google Voice import process
 
-Status: incremental importer implemented and synthetically tested on 2026-10-30; live installation/activation pending. The user explicitly selected **one-minute Apps Script polling**, replacing the earlier 15-second request. Follow [VOICE_INSTALLATION.md](VOICE_INSTALLATION.md). Read USER_SCOPE.md before further work.
+Status: incremental importer implemented and synthetically tested on 2026-10-30; subsequently installed and activated by the user, who confirmed the call log works. See [live verification](VOICE_LIVE_VERIFICATION.md). The user explicitly selected **one-minute Apps Script polling**, replacing the earlier 15-second request. Follow [VOICE_INSTALLATION.md](VOICE_INSTALLATION.md). Read USER_SCOPE.md before further work.
 
 ## Decision
 
@@ -15,7 +15,7 @@ Use Apps Script's advanced Gmail service for `Users.getProfile`, `Users.History.
 | Stage | Concrete behavior |
 | --- | --- |
 | Initialize | Capture current Gmail historyId and activation time as a baseline. Do not query old threads, import existing mail, or infer a backfill from old unread notifications. Activation explicitly means new notifications from this point forward. |
-| Poll | Selected schedule: every one minute, explicitly chosen by the user. The 15-second and earlier five-minute proposals are superseded. Request messageAdded history since the saved historyId. Ordinary idle runs inspect only changes, not a date-window replay. No new timer is installed until activation. |
+| Poll | Selected schedule: every one minute, explicitly chosen by the user. The 15-second and earlier five-minute proposals are superseded. Request messageAdded history since the saved historyId. Ordinary idle runs inspect only changes, not a date-window replay. The user has now created this timer and confirmed scheduled operation; do not duplicate it. |
 | Filter | Inspect message headers first. Accept only the supported Google Voice sender and missed-call/voicemail subject patterns. Only accepted notifications need body retrieval. Use Gmail internalDate for receipt-time boundaries, not the sender's Date header. |
 | Batch | Process at most 50 candidate message IDs per execution. Persist page position and message offset; continue the unfinished batch next run rather than returning to the first 50. Small Gmail history pages also bound the header work for unrelated new mail. |
 | Save | Use existing message-ID-based COMMUNICATIONID and SOURCEMESSAGEID deduplication. Append the batch to Communications and flush successfully before committing progress for that batch. Preserve current classification, blank initial STATUS, and no transcript storage. |
@@ -51,4 +51,4 @@ This can legitimately process a large *new* backlog after a long outage, but eac
 
 ## Implementation boundary
 
-Only the Voice importer, its tests, copy-map metadata, and its documentation are changed. Exact uploaded snapshots and all other runtime sources are preserved. initializeTICVoiceSync creates an explicit idempotent baseline; runTICVoiceIngest processes bounded incremental batches; inspectTICVoiceSetup is read-only; enableTICVoiceMinuteTrigger creates only the selected timer when absent. No live source installation, initialization, import, or trigger creation has been performed.
+Only the Voice importer, its tests, copy-map metadata, and its documentation are changed. Exact uploaded snapshots and all other runtime sources are preserved. initializeTICVoiceSync creates an explicit idempotent baseline; runTICVoiceIngest processes bounded incremental batches; inspectTICVoiceSetup is read-only; enableTICVoiceMinuteTrigger creates only the selected timer when absent. The user subsequently completed source installation, initialization, a live import and duplicate check, and timer creation; scheduled operation is user-confirmed. Codex did not perform these runtime actions through tools. See [live verification](VOICE_LIVE_VERIFICATION.md).

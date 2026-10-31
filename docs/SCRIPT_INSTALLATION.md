@@ -1,4 +1,4 @@
-> **Current Voice task:** [One-minute Voice installation](VOICE_INSTALLATION.md) changes only voice-communications. Its tested source uses incremental message history; activation is pending. Generator installation remains a separate handoff.
+> **Voice call log — complete:** the user installed voice-communications, verified import/deduplication, enabled one-minute polling, and confirmed scheduled operation. See [live evidence](VOICE_LIVE_VERIFICATION.md). Preserve its existing state/timer; the [installation guide](VOICE_INSTALLATION.md) is reference, not a pending task. Generator installation remains separate.
 
 > **Generator-only update:** See [GENERATOR_INSTALLATION.md](GENERATOR_INSTALLATION.md). Only eligible-cases-install is prepared for addition in AppSheet Intake. Do not replace other working files from this handoff.
 

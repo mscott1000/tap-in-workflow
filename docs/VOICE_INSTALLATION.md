@@ -2,13 +2,17 @@
 
 Prepared 2026-10-30. The user selected **one-minute Apps Script polling** in this chat, replacing the earlier 15-second request. This installs one changed file in an existing project. Code is tested in the repository; no live installation or activation has been performed by Codex.
 
+## Installation status — complete
+
+The user completed this procedure, verified a new call and a duplicate-free repeat, created the one-minute timer, and confirmed scheduled operation. See [live verification](VOICE_LIVE_VERIFICATION.md). These steps are retained as reference, not instructions to reinstall or reset working state.
+
 ## Read before starting
 
 The starting application is **Google Apps Script in a web browser**, not the AppSheet app builder or the Google Sheet. The destination is the existing **AppSheet Intake** script project, owned/run by the mailbox account that receives the Google Voice notifications. Its project URL is recorded in config/project-registry.json.
 
 The four uploaded script files are preserved in [the dated snapshot](../integrations/source-snapshots/2026-10-30/README.md). Confirm that **voice-communications** has not acquired newer edits since that upload before replacing it. If there are newer edits, reconcile that exact file first. The new source replaces the prior Voice scan/checkpoint logic and preserves its parsing/matching behavior. No other runtime file, manifest, ownership, or existing trigger is to be changed.
 
-Saving code can affect an existing timer immediately. The user reported Voice inactive. If the read-only diagnostic below discovers an existing Voice timer, stop before initialization or activation; its interval is not inferred or silently replaced.
+Saving code can affect an existing timer immediately. Before the completed installation, the user reported Voice inactive. The call log is now user-confirmed working; do not repeat these initial-setup steps on the working installation. If the read-only diagnostic below discovers an existing Voice timer, stop before initialization or activation; its interval is not inferred or silently replaced.
 
 ### Evidence for the controls used here
 

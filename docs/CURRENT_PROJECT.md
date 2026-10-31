@@ -19,12 +19,15 @@ The exact four user uploads are permanently preserved under `integrations/source
 
 1. **Required synthetic checks — complete.** The required context is restored and verified; do not reopen the resolved setting as a pending task.
 2. **Recover missing context and generator fixes — complete.** PRs #27 and #28 are merged into main.
-3. **Reconcile status documentation — this update.** Current/next-step/auto-merge documents now distinguish verified completion from remaining application work.
-4. **Google Voice implementation — repository code prepared and tested; live activation pending.** The user authorized continuation and selected one-minute polling.
+3. **Reconcile status documentation — complete.** Status documents distinguish completed recovery from remaining application work; this follow-through records the user-confirmed working Voice call log.
+4. **Google Voice implementation and activation — complete, user-confirmed live.** The user installed the source, connected the correct mailbox, verified a new call and duplicate prevention, created the one-minute timer, and confirmed scheduled operation. See [Voice live verification](VOICE_LIVE_VERIFICATION.md).
+
+## Completed Voice call log
+
+Google Voice → Communications is working with one-minute polling. Installed source is the PR #30 version at `10258ea42e994ca5d63f1073a7c1703aa55a74f7`. The user supplied a successful import log (`created=1, examined=1, more=false`), confirmed no duplicate on repeat, supplied the timer-creation log, and confirmed scheduled operation. This is user-reported live evidence, not an authenticated-screen inspection by Codex. Preserve the working baseline and timer. See [Voice live verification](VOICE_LIVE_VERIFICATION.md).
 
 ## Actual remaining work
 
-- **Google Voice:** user selected one-minute Apps Script polling, superseding the earlier timing request. Maintained source now uses incremental Gmail message history, metadata-first filtering, at most 50 IDs per run, safe persisted progress, and bounded expired-cursor recovery. It preserves the supplied parser/matching behavior and exact original uploads. Seven synthetic suites plus source/configuration checks are required; live operation is not established. [VOICE_INSTALLATION.md](VOICE_INSTALLATION.md) supplies the verified one-file setup, diagnostic, baseline, scoped test, and explicit timer steps. No source save, baseline, timer, mail scan, or Sheet write has been executed by Codex.
 - **Generator installation and app configuration:** repository source and the generator-only handoff are ready. No new evidence establishes live installation, saved generator-bot configuration, manual fallback/display configuration, or Request/Graveyard presentation. The confirmed existing form is **Case_Form**; no replacement form is needed. User-completed editor work must follow the exact source/destination and expressions in the handoff, without changing other working files or layouts.
 - **Live verification:** repository checks and GitHub merges do not establish live operation. Identify an explicitly fictional fixture and agreed test scope before user-run generation and a repeated deduplication check. Operational records are not fixtures.
 

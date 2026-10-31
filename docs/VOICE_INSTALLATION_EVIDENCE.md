@@ -1,10 +1,10 @@
 # Google Voice scheduling and installation evidence
 
-Verified 2026-10-30 by fetching the official Google documentation over HTTPS. Documentation evidence establishes supported controls; the user's authenticated editor was not inspected. No installation or activation has been performed.
+Verified 2026-10-30 by fetching the official Google documentation over HTTPS. Documentation evidence establishes supported controls; the user's authenticated editor was not inspected. The user subsequently completed installation and activation; see [live verification](VOICE_LIVE_VERIFICATION.md). This page records documentation evidence rather than authenticated-screen inspection.
 
 ## Selected cadence
 
-The user explicitly selected **one-minute Apps Script polling** on 2026-10-30. The prior 15-second request is superseded. Source and synthetic tests now implement the incremental importer and explicit one-minute timer helper. Live installation and activation remain pending; use VOICE_INSTALLATION.md.
+The user explicitly selected **one-minute Apps Script polling** on 2026-10-30. The prior 15-second request is superseded. Source and synthetic tests now implement the incremental importer and explicit one-minute timer helper. Live installation and activation are now complete, user-confirmed; preserve the working state and timer. VOICE_INSTALLATION.md remains a reference.
 
 ## Earlier requested cadence (historical)
 
@@ -27,7 +27,7 @@ Source: https://developers.google.com/apps-script/guides/services/quotas
 
 Push source: https://developers.google.com/workspace/gmail/api/guides/push
 
-No external backend, Cloud project, credentials, subscription, or recurring timer has been created. Before concrete installation instructions for a selected architecture, finish and test the actual source and ground the account/project-specific resources. The message-history importer is now tested repository source. Installation/activation remain user-completed steps; no live operation has been verified.
+No external backend, custom Cloud project, publishing credentials, or subscription was introduced. The tested message-history source was installed by the user, who created the one-minute recurring timer and confirmed live scheduled operation. See [live verification](VOICE_LIVE_VERIFICATION.md); this evidence is user-reported.
 
 ## Verified Apps Script controls
 
