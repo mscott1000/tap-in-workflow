@@ -2,10 +2,13 @@
 
 Prepared 2026-10-30. This task changes only the generator source, its tests, and its installation metadata/documentation. Other working runtime files are preserved byte-for-byte.
 
+See [Client-attached Cases handoff](CLIENT_ATTACHED_CASES.md) for the current phase-free Case model and user-owned AppSheet configuration.
+
 ## Behavior prepared and tested
 
 - CHARGECLASS Ordinance maps to O. Recognized class A–E values map to their letters; unknown/unclassified values stay blank with the raw value recorded in RESEARCHNOTES. CHARGETYPE is kept separate and is not inferred from a class letter alone.
 - Known court aliases map to the nine observed allowed Sheet court titles. Unknown or conflicting courts get explicit warnings; unsupported titles are not written into the dropdown.
+- New Cases have blank CASEPHASE and retain the existing CASESTATUS default **Ready to Refer**. This status does not determine parent Client phase in the intended model. Existing Cases are never reset.
 - Every new Case links to the selected CLIENTROWID and its CLIENTID. Repeating generation skips already-linked case numbers and retries the advisory check without duplicating Cases.
 - The history function must exist in the same Apps Script project before any Case is appended. The shared script lock is released before calling it. A failed source read reports an error and allows a deduplicated retry. No working dependency file is replaced.
 - Missing required headers fail before writes. Literal source text cannot become an appended formula. Warnings are recorded on new Case rows only.
@@ -30,7 +33,7 @@ Source is prepared, not installed. Installing and saving source is a user-comple
 
 ## AppSheet binding and manual fallback
 
-Existing AppSheet app ID: `4f5da70c-4818-4b2d-82cf-3a668bd8276e`. Current editor configuration is not directly accessible through connected tools. The following are prepared configuration values, not claims about saved configuration.
+Existing AppSheet app ID: `4f5da70c-4818-4b2d-82cf-3a668bd8276e`. Partial editor configuration was observed in user-provided recordings; full generator action/bot configuration remains unverified. The following are prepared configuration values, not claims about saved configuration.
 
 For the existing generator bot draft, use updates on Clients with condition:
 
@@ -41,7 +44,7 @@ AND(
 )
 ```
 
-Script project: AppSheet Intake. Function: `createEligibleCasesForClient`. Parameter `clientRowId`: `[ClientRowID]`. Existing Generate Cases action sets CASEGENERATIONREQUESTEDAT to `NOW()`. Reuse the existing equivalent bot rather than creating a duplicate.
+Script project: AppSheet Intake. Function: `createEligibleCasesForClient`. Parameter `clientRowId`: `[ClientRowID]`. The existing generator action, to be displayed as **Create Cases**, sets CASEGENERATIONREQUESTEDAT to `NOW()`. Reuse the existing equivalent bot rather than creating a duplicate.
 
 The user confirmed the existing form view is **Case_Form**. A Clients action named **Add Case** can open it with:
 

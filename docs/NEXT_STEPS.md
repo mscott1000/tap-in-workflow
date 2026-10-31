@@ -13,3 +13,7 @@ Tasks 1–3 were completed through the required-check repair, recovered context/
 The generator-only source is ready in [GENERATOR_INSTALLATION.md](GENERATOR_INSTALLATION.md). Its AppSheet Intake copy destination, generator-bot values, and existing Case_Form manual fallback are prepared. Live installation/configuration and Request/Graveyard presentation remain unverified; no other working script needs replacement for this generator update.
 
 Complete the remaining editor work and explicitly scoped fictional live tests separately from GitHub merges. Repository test success does not establish installed behavior.
+
+## Active: Client-attached Cases
+
+Follow [CLIENT_ATTACHED_CASES.md](CLIENT_ATTACHED_CASES.md). Generator preparation is phase-free; installation and user-owned AppSheet removal of Case-phase dependencies remain pending. Do not run generation until dependency review and an explicitly fictional fixture/test scope are established. **Create Cases** is the requested button title; **Add Case** is manual.

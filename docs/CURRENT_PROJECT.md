@@ -36,3 +36,7 @@ Google Voice → Communications is working with one-minute polling. Installed so
 Preserve the existing app, Jotform, custom layouts, archives, keys, ownership, scripts, and triggers. Use Client rows and child Case rows linked by CLIENTROWID. Exact resources are in `config/project-registry.json` and physical headers in `config/live-schema.snapshot.json`. Preserve `reference/TERMINOLOGY_V1_2026-10-23.md` unchanged; latest explicit user instructions control. Advisory evidence never automatically decides eligibility, merges identities, or submits messages/requests.
 
 The earlier narrowly scoped Sheet validation repair was completed and read back without record-value changes. This documentation reconciliation changes no live data, scripts, triggers, GitHub settings, or AppSheet configuration. GitHub merges do not install Apps Script or save AppSheet settings.
+
+## Current task: Client-attached Cases
+
+User authorized phase-free Cases and the **Create Cases** action. Generator source now leaves CASEPHASE blank on new rows, preserves the existing CASESTATUS default, and skips existing rows without resetting their progress. User-supplied editor recordings establish remaining legacy Case-phase dependencies, not completed removal. User owns AppSheet configuration. See [CLIENT_ATTACHED_CASES.md](CLIENT_ATTACHED_CASES.md). No live source installed, functions executed, or Sheet values changed for this task.
