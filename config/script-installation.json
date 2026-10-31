@@ -38,7 +38,7 @@
         "integrations/eligible-cases-core.js",
         "integrations/eligible-cases-adapter.gs"
       ],
-      "note": "Generator-only repair. Add this combined file to AppSheet Intake alongside the existing unchanged history functions. Do not replace other working files."
+      "note": "Generator-only repair. Add this combined file to AppSheet Intake alongside the existing unchanged history functions. Do not replace other working files. Phase-free new Cases; existing Ready to Refer status default retained. Coordinate user-owned AppSheet changes in docs/CLIENT_ATTACHED_CASES.md before testing."
     }
   ]
 }

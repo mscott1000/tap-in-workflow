@@ -124,7 +124,7 @@ function createEligibleCasesForClient(clientRowId) {
       return n;
     }
     ['ClientRowID', 'ClientID', 'EligibleCases', 'EligibleNotes'].forEach(function (n) { index(ch, n); });
-    ['CaseID', 'ClientID', 'ClientRowID', 'Jurisdiction', 'CaseNumber', 'CaseStatus', 'CasePhase', 'ResearchNotes',
+    ['CaseID', 'ClientID', 'ClientRowID', 'Jurisdiction', 'CaseNumber', 'CaseStatus', 'ResearchNotes',
       'NumberOfCounts', 'AttorneyName', 'ChargeText', 'WarrantIssueDate', 'ChargeType', 'ChargeClass',
       'BondAmount', 'CaseLink'].forEach(function (n) { index(kh, n); });
     var rows = clients.getLastRow() > 1 ? clients.getRange(2, 1, clients.getLastRow() - 1, ch.length).getDisplayValues() : [];
@@ -155,7 +155,9 @@ function createEligibleCasesForClient(clientRowId) {
         ChargeText: item.ChargeText, WarrantIssueDate: item.WarrantIssueDate,
         ChargeType: item.ChargeType, ChargeClass: item.ChargeClass,
         BondAmount: item.BondAmount, CaseLink: item.CaseLink,
-        CaseStatus: 'Ready to Refer', CasePhase: 'Request',
+        // Case progress is independent of the parent Client's phase.
+        // Retain the existing status default; do not assign a Case phase.
+        CaseStatus: 'Ready to Refer',
         ResearchNotes: item.issues.length ? 'Review before submission:\n' + item.issues.join('\n') : ''
       };
       Object.keys(values).forEach(function (name) {
@@ -179,7 +181,7 @@ function createEligibleCasesForClient(clientRowId) {
     })[0][index(kh, 'CaseID')]);
       if (historyResult && historyResult.sourceError) throw new Error('Historical source is unreadable; case checks report Error.');
     }
-    catch (e) { throw new Error('Cases saved; advisory history refresh failed. Retry Generate Cases; existing rows will be skipped. ' + String(e)); }
+    catch (e) { throw new Error('Cases saved; advisory history refresh failed. Retry Create Cases; existing rows will be skipped. ' + String(e)); }
   }
   return { fallback: false, created: created, skipped: skipped };
 }

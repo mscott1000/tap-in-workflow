@@ -42,11 +42,17 @@ assert.equal(row.ClientRowID,'synthetic-row');
 assert.equal(row.ClientID,'synthetic-identity');
 assert.equal(row.ChargeClass,'O');
 assert.equal(row.Jurisdiction,'Florissant');
-assert.equal(row.CasePhase,'Request');
+assert.equal(row.CasePhase,'','New Cases have no phase');
+assert.equal(row.CaseStatus,'Ready to Refer','Retain the existing status default');
 assert.equal(row.BondAmount,0);
 assert.equal(row.ChargeText,"'=SYNTHETIC()");
 assert.match(row.ResearchNotes,/ATTORNEYNAME/);
+// Staff edits to existing Cases survive a repeated Create Cases request.
+f.cases[1][caseHeaders.indexOf('CaseStatus')]='Check Cases';
+f.cases[1][caseHeaders.indexOf('CasePhase')]='Research';
 result=f.ctx.createEligibleCasesForClient('synthetic-row');
+assert.equal(f.cases[1][caseHeaders.indexOf('CaseStatus')],'Check Cases');
+assert.equal(f.cases[1][caseHeaders.indexOf('CasePhase')],'Research');
 assert.equal(result.created.length,0);
 assert.equal(result.skipped.length,2);
 assert.equal(f.cases.length,3);
@@ -59,7 +65,7 @@ f.ctx.createEligibleCasesForClient('synthetic-row');
 assert.equal(f.cases.length,3);
 // A first-run check failure leaves persisted rows retry-safe.
 const fail=fixture();fail.failHistory=true;
-assert.throws(()=>fail.ctx.createEligibleCasesForClient('synthetic-row'),/Retry Generate Cases/);
+assert.throws(()=>fail.ctx.createEligibleCasesForClient('synthetic-row'),/Retry Create Cases/);
 assert.equal(fail.cases.length,3);
 fail.failHistory=false;
 assert.equal(fail.ctx.createEligibleCasesForClient('synthetic-row').created.length,0);
