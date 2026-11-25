@@ -15,7 +15,7 @@ const WEEKLY_MARKER_COPY_CONFIG = {
 
   // Map: source column -> destination column
   COLUMN_MAP: [
-    { sourceCol: 10, destCol: 27 }, // J -> AA  Notes (Prep Notes)
+    { sourceCol: 10, destCol: 25 }, // J -> Y   Prep Notes
     { sourceCol: 11, destCol: 11 }, // K -> K   Intake Notes (Eligible Case Notes)
     { sourceCol: 14, destCol: 5 },  // N -> E   First Name
     { sourceCol: 15, destCol: 6 },  // O -> F   Last Name

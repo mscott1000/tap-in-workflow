@@ -17,3 +17,7 @@ Complete the remaining editor work and explicitly scoped fictional live tests se
 ## Active: Client-attached Cases
 
 Follow [CLIENT_ATTACHED_CASES.md](CLIENT_ATTACHED_CASES.md). Generator preparation is phase-free; installation and user-owned AppSheet removal of Case-phase dependencies remain pending. Do not run generation until dependency review and an explicitly fictional fixture/test scope are established. **Create Cases** is the requested button title; **Add Case** is manual.
+
+## Weekly Log Marker Copy
+
+Apply the column J to column Y mapping to the existing Weekly Log Marker Copy file in Apps Script after checking its current source. The repository change is prepared and tested. Confirm the live script location and mapping before editing it. Verify the result on a normal authorized transfer.
