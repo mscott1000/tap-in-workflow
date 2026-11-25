@@ -40,3 +40,7 @@ The earlier narrowly scoped Sheet validation repair was completed and read back 
 ## Current task: Client-attached Cases
 
 User authorized phase-free Cases and the **Create Cases** action. Generator source now leaves CASEPHASE blank on new rows, preserves the existing CASESTATUS default, and skips existing rows without resetting their progress. User-supplied editor recordings establish remaining legacy Case-phase dependencies, not completed removal. User owns AppSheet configuration. See [CLIENT_ATTACHED_CASES.md](CLIENT_ATTACHED_CASES.md). No live source installed, functions executed, or Sheet values changed for this task.
+
+## Weekly Log Marker Copy
+
+The maintained Weekly Log Marker Copy maps Weekly Call Log column J (Prep Notes) to column Y of the intake tab in the marker. Synthetic verification covers queued and manual transfers. The installed source has not been inspected or changed, and no live sheet data was changed.
